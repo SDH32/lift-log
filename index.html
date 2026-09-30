@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111418">
+<title>Lift Log</title>
+<style>
+  :root {
+    --bg: #111418; --card: #1b1f25; --line: #2a3038; --text: #e8eaed;
+    --muted: #8b939e; --accent: #4f9cf9; --danger: #e5484d; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    padding: env(safe-area-inset-top) 0 calc(70px + env(safe-area-inset-bottom));
+  }
+  header { padding: 16px; display: flex; justify-content: space-between; align-items: center; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  main { padding: 0 12px; max-width: 640px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .spread { justify-content: space-between; }
+  button {
+    font: inherit; border: 0; border-radius: 8px; padding: 10px 14px;
+    background: var(--line); color: var(--text); cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { background: transparent; color: var(--danger); padding: 6px 8px; }
+  button.small { padding: 6px 10px; font-size: 14px; }
+  button.block { width: 100%; }
+  input, select {
+    font: inherit; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 100%;
+  }
+  input[type=number] { text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  td, th { padding: 6px 4px; text-align: center; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr.done td { color: var(--ok); }
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0; display: flex;
+    background: var(--card); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button { flex: 1; background: none; border-radius: 0; padding: 14px; color: var(--muted); }
+  nav button.active { color: var(--accent); font-weight: 600; }
+  .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
+  .pill { display: inline-block; background: var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; margin: 2px; }
+  .tappable { cursor: pointer; }
+  .seg { display: flex; gap: 4px; margin: 10px 0; }
+  .seg button { flex: 1; padding: 8px; font-size: 14px; background: var(--bg); color: var(--muted); }
+  .seg button.on { background: var(--line); color: var(--text); font-weight: 600; }
+  .hero { font-size: 30px; font-weight: 700; }
+  /* Chart: single series, dark surface. Series color = reference palette slot 1 (dark). */
+  .chart { --series-1: #3987e5; --surface: var(--card); position: relative; touch-action: pan-y; }
+  .chart svg { display: block; overflow: visible; }
+  .chart svg:focus { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+  .chart .tip {
+    position: absolute; top: 0; pointer-events: none; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; white-space: nowrap; display: none;
+  }
+  .chart .tip .key { display: inline-block; width: 12px; height: 2px; background: var(--series-1); vertical-align: middle; margin-right: 6px; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 10px; text-align: center; }
+  .cal .dow { color: var(--muted); font-size: 12px; padding: 4px 0; }
+  .cal .day { padding: 0; aspect-ratio: 1; max-height: 44px; width: 100%; border-radius: 50%; background: none; color: var(--muted); font-size: 14px; }
+  .cal .day:disabled { cursor: default; }
+  .cal .day.has { background: var(--accent); color: #fff; font-weight: 600; }
+  .cal .day.today { box-shadow: inset 0 0 0 2px var(--text); }
+  .cal .day.sel { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
+  .data-table td, .data-table th { text-align: left; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lift Log</h1>
+  <span class="muted" id="timer"></span>
+</header>
+<main id="view"></main>
+<nav>
+  <button data-tab="workout">Workout</button>
+  <button data-tab="history">History</button>
+  <button data-tab="exercises">Exercises</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+
+<datalist id="exercise-list"></datalist>
+
+<script>
+const KEY = 'liftlog.v1';
+const DEFAULT_EXERCISES = ['Squat', 'Bench Press', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-up', 'Romanian Deadlift', 'Incline Dumbbell Press', 'Lat Pulldown', 'Dumbbell Curl'];
+
+let state = load();
+let tab = state.active ? 'workout' : 'history';
+let detail = null;        // exercise name shown in the progress view
+let metric = 'e1rm';
+let showTable = false;
+let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let selectedDay = null;   // 'YYYY-MM-DD' filter for the history list
+
+function load() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(KEY)); } catch {}
+  s ??= { unit: 'lb', sessions: [], active: null, exercises: DEFAULT_EXERCISES.slice() };
+  s.templates ??= [];
+  return s;
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const fmtDur = (ms) => { const m = Math.round(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+const dayKey = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const fmtSet = (s) => s.weight ? `${s.weight}×${s.reps}` : `${s.reps} reps`;
+const volume = (ex) => ex.sets.filter(s => s.done).reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0);
+// Epley estimate
+const e1rm = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
+
+// Most recent completed sets for an exercise, for "last time" hints
+function lastPerformance(name) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const ex = state.sessions[i].exercises.find(e => e.name.toLowerCase() === name.toLowerCase());
+    if (ex && ex.sets.some(s => s.done)) return { date: state.sessions[i].start, sets: ex.sets.filter(s => s.done) };
+  }
+  return null;
+}
+
+// ---------- Views ----------
+function render() {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $('#exercise-list').innerHTML = state.exercises.map(e => `<option value="${esc(e)}">`).join('');
+  const views = { workout: viewWorkout, history: viewHistory, exercises: detail ? viewExerciseDetail : viewExercises, settings: viewSettings };
+  $('#view').innerHTML = views[tab]();
+  if (tab === 'exercises' && detail) drawChart();
+  tickTimer();
+}
+
+function viewWorkout() {
+  const w = state.active;
+  if (!w) {
+    const templates = state.templates.map((t, i) => `<div class="card">
+      <div class="row spread">
+        <h2>${esc(t.name)}</h2>
+        <button class="danger" onclick="deleteTemplate(${i})">Delete</button>
+      </div>
+      <div class="muted">${t.exercises.map(esc).join(' · ')}</div>
+      <button class="primary block small" style="margin-top:10px" onclick="startWorkout(${i})">Start</button>
+    </div>`).join('');
+    return `<div class="empty">
+      <p>No workout in progress.</p>
+      <button class="primary" onclick="startWorkout()">Start empty workout</button>
+    </div>
+    ${templates ? `<h2 style="margin:0 4px 8px">Templates</h2>${templates}`
+      : `<p class="muted" style="text-align:center">Tip: save a workout as a template to start it in one tap next time.</p>`}`;
+  }
+  return `
+    <div class="card">
+      <input placeholder="Workout name (e.g. Push day)" value="${esc(w.name || '')}" onchange="state.active.name=this.value;save()">
+    </div>
+    ${w.exercises.map((ex, i) => exerciseCard(ex, i)).join('')}
+    <div class="card">
+      <div class="row">
+        <input id="new-ex" list="exercise-list" placeholder="Add exercise…" onkeydown="if(event.key==='Enter')addExercise()">
+        <button class="primary" onclick="addExercise()">Add</button>
+      </div>
+    </div>
+    <button class="block" style="margin-bottom:8px" onclick="saveTemplate(state.active)">Save as template</button>
+    <div class="row" style="margin-bottom:12px">
+      <button class="block" onclick="cancelWorkout()">Discard</button>
+      <button class="block primary" onclick="finishWorkout()">Finish</button>
+    </div>`;
+}
+
+function exerciseCard(ex, i) {
+  const last = lastPerformance(ex.name);
+  const lastTxt = last ? `Last (${fmtDate(last.date)}): ${last.sets.map(fmtSet).join(', ')}` : 'First time logging this';
+  return `<div class="card">
+    <div class="row spread">
+      <h2>${esc(ex.name)}</h2>
+      <button class="danger" onclick="removeExercise(${i})">Remove</button>
+    </div>
+    <div class="muted">${esc(lastTxt)}</div>
+    <table>
+      <tr><th>Set</th><th>${state.unit}</th><th>Reps</th><th></th><th></th></tr>
+      ${ex.sets.map((s, j) => `
+        <tr class="${s.done ? 'done' : ''}">
+          <td>${j + 1}</td>
+          <td><input type="number" inputmode="decimal" placeholder="BW" value="${s.weight ?? ''}" onchange="setField(${i},${j},'weight',this.value)"></td>
+          <td><input type="number" inputmode="numeric" value="${s.reps ?? ''}" onchange="setField(${i},${j},'reps',this.value)"></td>
+          <td><button class="small ${s.done ? 'primary' : ''}" onclick="toggleDone(${i},${j})">✓</button></td>
+          <td><button class="danger small" onclick="removeSet(${i},${j})">✕</button></td>
+        </tr>`).join('')}
+    </table>
+    <button class="block small" style="margin-top:8px" onclick="addSet(${i})">+ Add set</button>
+  </div>`;
+}
+
+function viewHistory() {
+  if (!state.sessions.length) return `<div class="empty">No workouts logged yet.<br><br><button class="primary" onclick="startWorkout()">Start your first</button></div>`;
+  // Drop a day filter that no longer matches anything (e.g. its only session was deleted)
+  if (selectedDay && !state.sessions.some(s => dayKey(s.start) === selectedDay)) selectedDay = null;
+  const shown = state.sessions.map((s, idx) => ({ s, idx }))
+    .filter(({ s }) => !selectedDay || dayKey(s.start) === selectedDay)
+    .sort((a, b) => b.s.start - a.s.start);
+  const filterBar = selectedDay ? `<div class="row spread" style="margin:0 4px 12px">
+      <span>Showing ${fmtDate(shown[0].s.start)}</span>
+      <button class="small" onclick="selectedDay=null;render()">Show all</button>
+    </div>` : '';
+  return viewCalendar() + filterBar + shown.map(({ s, idx }) => {
+    const vol = s.exercises.reduce((t, e) => t + volume(e), 0);
+    return `<div class="card">
+      <div class="row spread">
+        <h2>${esc(s.name || 'Workout')}</h2>
+        <button class="danger" onclick="deleteSession(${idx})">Delete</button>
+      </div>
+      <div class="muted">${fmtDate(s.start)} · ${fmtDur(s.end - s.start)} · ${vol.toLocaleString()} ${state.unit} volume</div>
+      ${s.exercises.map(e => `<div style="margin-top:8px"><b>${esc(e.name)}</b><br>
+        ${e.sets.filter(x => x.done).map(x => `<span class="pill">${fmtSet(x)}</span>`).join('') || '<span class="muted">no sets</span>'}
+      </div>`).join('')}
+      <button class="small" style="margin-top:10px" onclick="saveTemplate(state.sessions[${idx}])">Save as template</button>
+    </div>`;
+  }).join('');
+}
+
+// Month grid; days with a session are filled. Tap one to filter the history list to it.
+function viewCalendar() {
+  const y = calMonth.getFullYear(), mo = calMonth.getMonth();
+  const byDay = {};
+  for (const s of state.sessions) (byDay[dayKey(s.start)] ??= []).push(s.name || 'Workout');
+  const offset = new Date(y, mo, 1).getDay();
+  const days = new Date(y, mo + 1, 0).getDate();
+  const today = dayKey(Date.now());
+  const monthCount = Object.entries(byDay)
+    .filter(([k]) => k.startsWith(`${y}-${String(mo + 1).padStart(2, '0')}-`))
+    .reduce((t, [, v]) => t + v.length, 0);
+  const cells = [];
+  for (let i = 0; i < offset; i++) cells.push('<span></span>');
+  for (let d = 1; d <= days; d++) {
+    const key = dayKey(new Date(y, mo, d).getTime());
+    const names = byDay[key];
+    const label = `${new Date(y, mo, d).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}: ${names ? names.join(', ') : 'rest day'}`;
+    const cls = ['day', names && 'has', key === today && 'today', key === selectedDay && 'sel'].filter(Boolean).join(' ');
+    cells.push(`<button class="${cls}" aria-label="${esc(label)}" title="${esc(label)}" ${names ? `onclick="selectDay('${key}')"` : 'disabled'}>${d}</button>`);
+  }
+  return `<div class="card">
+    <div class="row spread">
+      <button class="small" onclick="shiftMonth(-1)" aria-label="Previous month">‹</button>
+      <div style="text-align:center">
+        <b>${calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</b>
+        <div class="muted">${monthCount} workout${monthCount === 1 ? '' : 's'}</div>
+      </div>
+      <button class="small" onclick="shiftMonth(1)" aria-label="Next month">›</button>
+    </div>
+    <div class="cal">
+      ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => `<span class="dow">${d}</span>`).join('')}
+      ${cells.join('')}
+    </div>
+  </div>`;
+}
+function shiftMonth(n) { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + n, 1); render(); }
+function selectDay(key) { selectedDay = selectedDay === key ? null : key; render(); }
+
+function viewExercises() {
+  // Best set and last-done date per exercise; weighted lifts rank by est. 1RM, bodyweight by reps
+  const stats = {};
+  for (const s of state.sessions) for (const e of s.exercises) {
+    const k = e.name;
+    stats[k] ??= { best: 0, bestSet: null, bestReps: 0, last: 0, sessions: 0 };
+    const done = e.sets.filter(x => x.done && x.reps);
+    if (!done.length) continue;
+    stats[k].sessions++;
+    stats[k].last = Math.max(stats[k].last, s.start);
+    for (const x of done) {
+      if (!x.weight) { stats[k].bestReps = Math.max(stats[k].bestReps, x.reps); continue; }
+      const est = e1rm(x.weight, x.reps);
+      if (est > stats[k].best) { stats[k].best = est; stats[k].bestSet = x; }
+    }
+  }
+  const names = Object.keys(stats).filter(k => stats[k].sessions).sort((a, b) => stats[b].last - stats[a].last);
+  if (!names.length) return `<div class="empty">Log some sets to see per-exercise progress.</div>`;
+  return names.map(n => {
+    const st = stats[n];
+    const best = [
+      st.bestSet && `Best: ${fmtSet(st.bestSet)} · est. 1RM <b>${st.best} ${state.unit}</b>`,
+      st.bestReps && `${st.bestSet ? 'Bodyweight' : 'Best'}: <b>${st.bestReps} reps</b>`,
+    ].filter(Boolean).join('<br>');
+    return `<div class="card tappable" onclick="openDetail(this.dataset.name)" data-name="${esc(n)}">
+      <div class="row spread"><h2>${esc(n)}</h2><span class="muted">Progress ›</span></div>
+      <div class="muted">${st.sessions} session${st.sessions > 1 ? 's' : ''} · last ${fmtDate(st.last)}</div>
+      <div style="margin-top:6px">${best}</div>
+    </div>`;
+  }).join('');
+}
+
+// ---------- Progress chart ----------
+// Weighted metrics use sets with a weight; rep metrics use bodyweight sets (weight left blank)
+const METRICS = {
+  e1rm:      { label: 'Est. 1RM',   weighted: true,  get: sets => Math.max(...sets.map(s => e1rm(s.weight, s.reps))) },
+  top:       { label: 'Top set',    weighted: true,  get: sets => Math.max(...sets.map(s => s.weight)) },
+  volume:    { label: 'Volume',     weighted: true,  get: sets => sets.reduce((t, s) => t + s.weight * s.reps, 0) },
+  maxReps:   { label: 'Max reps',   weighted: false, get: sets => Math.max(...sets.map(s => s.reps)) },
+  totalReps: { label: 'Total reps', weighted: false, get: sets => sets.reduce((t, s) => t + s.reps, 0) },
+};
+const metricUnit = (k) => METRICS[k].weighted ? state.unit : 'reps';
+
+// One point per session that has completed sets of the right kind for this metric
+function exercisePoints(name, key = metric) {
+  const m = METRICS[key];
+  const pts = [];
+  for (const s of state.sessions) {
+    const ex = s.exercises.find(e => e.name.toLowerCase() === name.toLowerCase());
+    const sets = ex ? ex.sets.filter(x => x.done && x.reps && !!x.weight === m.weighted) : [];
+    if (sets.length) pts.push({ date: s.start, sets, v: m.get(sets) });
+  }
+  return pts.sort((a, b) => a.date - b.date);
+}
+const availableMetrics = (name) => Object.keys(METRICS).filter(k => exercisePoints(name, k).length);
+
+function openDetail(name) { detail = name; showTable = false; render(); window.scrollTo(0, 0); }
+
+function viewExerciseDetail() {
+  const avail = availableMetrics(detail);
+  if (!avail.includes(metric)) metric = avail[0];
+  const pts = exercisePoints(detail);
+  const m = METRICS[metric], unit = metricUnit(metric);
+  const latest = pts.at(-1), first = pts[0];
+  const change = latest && pts.length > 1 ? latest.v - first.v : null;
+  return `
+    <button class="small" style="margin-bottom:12px" onclick="detail=null;render()">‹ All exercises</button>
+    <div class="card">
+      <h2>${esc(detail)}</h2>
+      ${latest ? `
+        <div class="muted">${m.label}, latest session</div>
+        <div class="hero">${latest.v.toLocaleString()} ${unit}</div>
+        <div class="muted">${change === null ? 'One session so far' : `${change >= 0 ? '+' : ''}${change.toLocaleString()} ${unit} since ${fmtDate(first.date)}`}</div>` : ''}
+      ${avail.length > 1 ? `<div class="seg">
+        ${avail.map(k => `<button class="${k === metric ? 'on' : ''}" onclick="metric='${k}';render()">${METRICS[k].label}</button>`).join('')}
+      </div>` : '<div style="height:10px"></div>'}
+      <div class="muted" style="margin-bottom:4px">${m.label} (${unit}) per session</div>
+      <div class="chart" id="chart"></div>
+      <button class="small" style="margin-top:10px" onclick="showTable=!showTable;render()">${showTable ? 'Hide' : 'Show'} table</button>
+      ${showTable ? `<table class="data-table" style="margin-top:8px">
+        <tr><th>Date</th><th>Sets</th><th>${m.label}</th></tr>
+        ${pts.slice().reverse().map(p => `<tr><td>${fmtDate(p.date)}</td><td>${p.sets.map(fmtSet).join(', ')}</td><td>${p.v.toLocaleString()}</td></tr>`).join('')}
+      </table>` : ''}
+    </div>`;
+}
+
+function niceTicks(lo, hi, count) {
+  const raw = (hi - lo) / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= raw);
+  const ticks = [];
+  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) ticks.push(+v.toFixed(6));
+  return ticks;
+}
+
+function drawChart() {
+  const el = $('#chart');
+  const pts = exercisePoints(detail);
+  if (!el || !pts.length) return;
+  const W = el.clientWidth, H = 220, pad = { t: 16, r: 16, b: 26, l: 44 };
+  const x0 = pts[0].date, x1 = pts.at(-1).date;
+  const vs = pts.map(p => p.v);
+  let lo = Math.min(...vs), hi = Math.max(...vs);
+  const margin = (hi - lo) * 0.15 || hi * 0.1 || 1;
+  const ticks = niceTicks(Math.max(0, lo - margin), hi + margin, 4);
+  lo = ticks[0]; hi = ticks.at(-1);
+  const X = d => x1 === x0 ? (pad.l + W - pad.r) / 2 : pad.l + (d - x0) / (x1 - x0) * (W - pad.l - pad.r);
+  const Y = v => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+  const shortDate = ts => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const last = pts.at(-1);
+
+  el.innerHTML = `
+    <svg width="${W}" height="${H}" tabindex="0" role="img" aria-label="${esc(detail)} ${METRICS[metric].label} over ${pts.length} sessions">
+      ${ticks.map(t => `
+        <line x1="${pad.l}" x2="${W - pad.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--line)" stroke-width="1"/>
+        <text x="${pad.l - 8}" y="${Y(t) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${t.toLocaleString()}</text>`).join('')}
+      <text x="${X(x0)}" y="${H - 6}" text-anchor="${pts.length > 1 ? 'start' : 'middle'}" fill="var(--muted)" font-size="11">${shortDate(x0)}</text>
+      ${pts.length > 1 ? `<text x="${X(x1)}" y="${H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${shortDate(x1)}</text>` : ''}
+      <line class="xhair" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>
+      <polyline points="${pts.map(p => `${X(p.date)},${Y(p.v)}`).join(' ')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${pts.map(p => `<circle cx="${X(p.date)}" cy="${Y(p.v)}" r="4" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2"/>`).join('')}
+      <circle class="hover-dot" r="6" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
+      <text x="${Math.min(X(last.date), W - pad.r)}" y="${Y(last.v) - 12}" text-anchor="end" fill="var(--text)" font-size="12" font-weight="600">${last.v.toLocaleString()}</text>
+    </svg>
+    <div class="tip"></div>`;
+
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
+  const xhair = el.querySelector('.xhair'), dot = el.querySelector('.hover-dot');
+  let current = -1;
+  const show = (i) => {
+    current = i;
+    const p = pts[i], px = X(p.date), py = Y(p.v);
+    xhair.setAttribute('x1', px); xhair.setAttribute('x2', px); xhair.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('visibility', 'visible');
+    tip.replaceChildren();
+    const head = document.createElement('div');
+    head.className = 'muted'; head.textContent = fmtDate(p.date);
+    const val = document.createElement('div');
+    const key = document.createElement('span'); key.className = 'key';
+    val.append(key, `${METRICS[metric].label}: ${p.v.toLocaleString()} ${metricUnit(metric)}`);
+    const sets = document.createElement('div');
+    sets.className = 'muted'; sets.textContent = p.sets.map(fmtSet).join(', ');
+    tip.append(head, val, sets);
+    tip.style.display = 'block';
+    tip.style.left = Math.max(0, Math.min(px - tip.offsetWidth / 2, W - tip.offsetWidth)) + 'px';
+    tip.style.top = Math.max(0, py - tip.offsetHeight - 14) + 'px';
+  };
+  const hide = () => { current = -1; tip.style.display = 'none'; xhair.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); };
+  // Crosshair snaps to the nearest session by x, so you never have to hit the line itself
+  const nearest = (e) => {
+    const x = e.clientX - svg.getBoundingClientRect().left;
+    let best = 0;
+    pts.forEach((p, i) => { if (Math.abs(X(p.date) - x) < Math.abs(X(pts[best].date) - x)) best = i; });
+    return best;
+  };
+  svg.onpointermove = svg.onpointerdown = (e) => show(nearest(e));
+  svg.onpointerleave = hide;
+  svg.onblur = hide;
+  svg.onkeydown = (e) => {
+    if (e.key === 'ArrowRight') show(Math.min(pts.length - 1, current + 1));
+    else if (e.key === 'ArrowLeft') show(Math.max(0, current < 0 ? pts.length - 1 : current - 1));
+    else if (e.key === 'Escape') hide();
+  };
+}
+window.addEventListener('resize', () => { if (tab === 'exercises' && detail) drawChart(); });
+
+function viewSettings() {
+  return `
+    <div class="card">
+      <h2>Units</h2>
+      <select onchange="state.unit=this.value;save();render()">
+        <option value="lb" ${state.unit === 'lb' ? 'selected' : ''}>Pounds (lb)</option>
+        <option value="kg" ${state.unit === 'kg' ? 'selected' : ''}>Kilograms (kg)</option>
+      </select>
+    </div>
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="muted">Data lives only in this browser. Export regularly so you don't lose it.</p>
+      <div class="row">
+        <button class="block" onclick="exportData()">Export</button>
+        <button class="block" onclick="$('#import').click()">Import</button>
+      </div>
+      <input type="file" id="import" accept="application/json" style="display:none" onchange="importData(this.files[0])">
+    </div>`;
+}
+
+// ---------- Actions ----------
+// Pre-fill with last session's sets so you just adjust and tick
+function newExercise(name) {
+  const last = lastPerformance(name);
+  const sets = last ? last.sets.map(s => ({ weight: s.weight, reps: s.reps, done: false })) : [{ weight: null, reps: null, done: false }];
+  return { name, sets };
+}
+function startWorkout(templateIdx) {
+  if (!state.active) {
+    const t = state.templates[templateIdx];
+    state.active = { start: Date.now(), name: t?.name ?? '', exercises: t ? t.exercises.map(newExercise) : [] };
+  }
+  save(); tab = 'workout'; render();
+}
+function addExercise() {
+  const name = $('#new-ex').value.trim();
+  if (!name) return;
+  if (!state.exercises.some(e => e.toLowerCase() === name.toLowerCase())) state.exercises.push(name);
+  state.active.exercises.push(newExercise(name));
+  save(); render();
+  $('#new-ex').focus();
+}
+function saveTemplate(workout) {
+  if (!workout.exercises.length) return alert('Add some exercises first.');
+  const name = prompt('Template name:', workout.name || '')?.trim();
+  if (!name) return;
+  const exercises = workout.exercises.map(e => e.name);
+  const existing = state.templates.findIndex(t => t.name.toLowerCase() === name.toLowerCase());
+  if (existing >= 0) {
+    if (!confirm(`Replace the existing "${name}" template?`)) return;
+    state.templates[existing] = { name, exercises };
+  } else {
+    state.templates.push({ name, exercises });
+  }
+  save(); alert(`Saved template "${name}".`);
+}
+function deleteTemplate(i) {
+  if (!confirm(`Delete template "${state.templates[i].name}"?`)) return;
+  state.templates.splice(i, 1); save(); render();
+}
+function removeExercise(i) {
+  if (!confirm(`Remove ${state.active.exercises[i].name}?`)) return;
+  state.active.exercises.splice(i, 1); save(); render();
+}
+function addSet(i) {
+  const sets = state.active.exercises[i].sets;
+  const prev = sets[sets.length - 1];
+  sets.push({ weight: prev?.weight ?? null, reps: prev?.reps ?? null, done: false });
+  save(); render();
+}
+function removeSet(i, j) { state.active.exercises[i].sets.splice(j, 1); save(); render(); }
+function setField(i, j, f, v) { state.active.exercises[i].sets[j][f] = v === '' ? null : Number(v); save(); }
+function toggleDone(i, j) { const s = state.active.exercises[i].sets[j]; s.done = !s.done; save(); render(); }
+function finishWorkout() {
+  const w = state.active;
+  if (!w.exercises.some(e => e.sets.some(s => s.done))) {
+    if (!confirm('No sets are ticked as done. Finish anyway?')) return;
+  }
+  w.end = Date.now();
+  state.sessions.push(w); state.active = null;
+  save(); tab = 'history'; render();
+}
+function cancelWorkout() {
+  if (!confirm('Discard this workout?')) return;
+  state.active = null; save(); render();
+}
+function deleteSession(i) {
+  if (!confirm('Delete this workout from history?')) return;
+  state.sessions.splice(i, 1); save(); render();
+}
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `liftlog-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+}
+function importData(file) {
+  if (!file) return;
+  file.text().then(t => {
+    const data = JSON.parse(t);
+    if (!Array.isArray(data.sessions)) throw new Error('bad file');
+    if (!confirm(`Replace current data with ${data.sessions.length} workouts from file?`)) return;
+    data.templates ??= [];
+    state = data; detail = null; save(); render();
+  }).catch(() => alert("Couldn't read that file."));
+}
+
+function tickTimer() {
+  $('#timer').textContent = state.active ? `⏱ ${fmtDur(Date.now() - state.active.start)}` : '';
+}
+setInterval(tickTimer, 30000);
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; detail = null; selectedDay = null; render(); });
+render();
+</script>
+</body>
+</html>
