@@ -341,7 +341,7 @@ function viewExerciseDetail() {
       ${avail.length > 1 ? `<div class="seg">
         ${avail.map(k => `<button class="${k === metric ? 'on' : ''}" onclick="metric='${k}';render()">${METRICS[k].label}</button>`).join('')}
       </div>` : '<div style="height:10px"></div>'}
-      <div class="muted" style="margin-bottom:4px">${m.label} (${unit}) per session</div>
+      <div class="muted" style="margin-bottom:4px">${m.label}${m.weighted ? ` (${unit})` : ''} per session</div>
       <div class="chart" id="chart"></div>
       <button class="small" style="margin-top:10px" onclick="showTable=!showTable;render()">${showTable ? 'Hide' : 'Show'} table</button>
       ${showTable ? `<table class="data-table" style="margin-top:8px">
