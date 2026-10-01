@@ -72,6 +72,9 @@
   .cal .day.has { background: var(--accent); color: #fff; font-weight: 600; }
   .cal .day.today { box-shadow: inset 0 0 0 2px var(--text); }
   .cal .day.sel { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
+  .tpl-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tpl-row button:disabled { opacity: .35; cursor: default; }
   .data-table td, .data-table th { text-align: left; border-top: 1px solid var(--line); }
 </style>
 </head>
@@ -100,7 +103,8 @@ let detail = null;        // exercise name shown in the progress view
 let metric = 'e1rm';
 let showTable = false;
 let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-let selectedDay = null;   // 'YYYY-MM-DD' filter for the history list
+let selectedDay = null;
+let tplDraft = null;      // template being created/edited in Settings   // 'YYYY-MM-DD' filter for the history list
 
 function load() {
   let s = null;
@@ -134,7 +138,7 @@ function lastPerformance(name) {
 function render() {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $('#exercise-list').innerHTML = state.exercises.map(e => `<option value="${esc(e)}">`).join('');
-  const views = { workout: viewWorkout, history: viewHistory, exercises: detail ? viewExerciseDetail : viewExercises, settings: viewSettings };
+  const views = { workout: viewWorkout, history: viewHistory, exercises: detail ? viewExerciseDetail : viewExercises, settings: tplDraft ? viewTemplateEditor : viewSettings };
   $('#view').innerHTML = views[tab]();
   if (tab === 'exercises' && detail) drawChart();
   tickTimer();
@@ -146,7 +150,7 @@ function viewWorkout() {
     const templates = state.templates.map((t, i) => `<div class="card">
       <div class="row spread">
         <h2>${esc(t.name)}</h2>
-        <button class="danger" onclick="deleteTemplate(${i})">Delete</button>
+        <button class="small" onclick="editTemplate(${i})">Edit</button>
       </div>
       <div class="muted">${t.exercises.map(esc).join(' · ')}</div>
       <button class="primary block small" style="margin-top:10px" onclick="startWorkout(${i})">Start</button>
@@ -432,7 +436,20 @@ function drawChart() {
 window.addEventListener('resize', () => { if (tab === 'exercises' && detail) drawChart(); });
 
 function viewSettings() {
+  const templates = state.templates.map((t, i) => `
+    <div class="tpl-row">
+      <div style="min-width:0">
+        <b>${esc(t.name)}</b>
+        <div class="muted ellipsis">${t.exercises.map(esc).join(' · ')}</div>
+      </div>
+      <button class="small" onclick="editTemplate(${i})">Edit</button>
+    </div>`).join('');
   return `
+    <div class="card">
+      <h2>Templates</h2>
+      ${templates || '<p class="muted">No templates yet.</p>'}
+      <button class="block primary small" style="margin-top:10px" onclick="editTemplate(null)">+ New template</button>
+    </div>
     <div class="card">
       <h2>Units</h2>
       <select onchange="state.unit=this.value;save();render()">
@@ -449,6 +466,86 @@ function viewSettings() {
       </div>
       <input type="file" id="import" accept="application/json" style="display:none" onchange="importData(this.files[0])">
     </div>`;
+}
+
+// ---------- Template editor ----------
+// Edits a draft copy; nothing is saved until "Save template"
+function viewTemplateEditor() {
+  const d = tplDraft;
+  const last = d.exercises.length - 1;
+  return `
+    <button class="small" style="margin-bottom:12px" onclick="tplCancel()">‹ Settings</button>
+    <div class="card">
+      <h2>${d.idx === null ? 'New template' : 'Edit template'}</h2>
+      <input id="tpl-name" placeholder="Template name (e.g. Push day)" value="${esc(d.name)}" oninput="tplDraft.name=this.value">
+    </div>
+    <div class="card">
+      <h2>Exercises</h2>
+      ${d.exercises.length ? d.exercises.map((name, j) => `
+        <div class="tpl-row">
+          <span class="ellipsis"><span class="muted">${j + 1}.</span> ${esc(name)}</span>
+          <div class="row" style="gap:4px">
+            <button class="small" onclick="tplMove(${j},-1)" ${j === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+            <button class="small" onclick="tplMove(${j},1)" ${j === last ? 'disabled' : ''} aria-label="Move down">↓</button>
+            <button class="danger small" onclick="tplRemove(${j})" aria-label="Remove">✕</button>
+          </div>
+        </div>`).join('') : '<p class="muted">No exercises yet. Add some below.</p>'}
+      <div class="row" style="margin-top:10px">
+        <input id="tpl-ex" list="exercise-list" placeholder="Add exercise…" onkeydown="if(event.key==='Enter')tplAdd()">
+        <button class="primary" onclick="tplAdd()">Add</button>
+      </div>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="block" onclick="tplCancel()">Cancel</button>
+      <button class="block primary" onclick="tplSave()">Save template</button>
+    </div>
+    ${d.idx === null ? '' : '<button class="block danger" style="margin-bottom:12px" onclick="tplDelete()">Delete template</button>'}`;
+}
+function editTemplate(i) {
+  const t = i === null ? { name: '', exercises: [] } : state.templates[i];
+  tplDraft = { idx: i, name: t.name, exercises: t.exercises.slice() };
+  tab = 'settings'; render(); window.scrollTo(0, 0);
+}
+function tplAdd() {
+  const name = $('#tpl-ex').value.trim();
+  if (!name) return;
+  tplDraft.exercises.push(name);
+  render();
+  $('#tpl-ex').focus();
+}
+function tplMove(j, dir) {
+  const ex = tplDraft.exercises;
+  [ex[j], ex[j + dir]] = [ex[j + dir], ex[j]];
+  render();
+}
+function tplRemove(j) { tplDraft.exercises.splice(j, 1); render(); }
+function tplDirty() {
+  const d = tplDraft;
+  const orig = d.idx === null ? { name: '', exercises: [] } : state.templates[d.idx];
+  return d.name !== orig.name || JSON.stringify(d.exercises) !== JSON.stringify(orig.exercises);
+}
+function tplCancel() {
+  if (tplDirty() && !confirm('Discard changes to this template?')) return;
+  tplDraft = null; render();
+}
+function tplSave() {
+  const d = tplDraft;
+  const name = d.name.trim();
+  if (!name) return alert('Give the template a name.');
+  if (!d.exercises.length) return alert('Add at least one exercise.');
+  const clash = state.templates.findIndex((t, i) => i !== d.idx && t.name.toLowerCase() === name.toLowerCase());
+  if (clash >= 0) return alert(`There's already a template called "${state.templates[clash].name}".`);
+  for (const ex of d.exercises) {
+    if (!state.exercises.some(e => e.toLowerCase() === ex.toLowerCase())) state.exercises.push(ex);
+  }
+  const t = { name, exercises: d.exercises };
+  if (d.idx === null) state.templates.push(t); else state.templates[d.idx] = t;
+  tplDraft = null; save(); render();
+}
+function tplDelete() {
+  if (!confirm(`Delete template "${state.templates[tplDraft.idx].name}"?`)) return;
+  state.templates.splice(tplDraft.idx, 1);
+  tplDraft = null; save(); render();
 }
 
 // ---------- Actions ----------
@@ -486,10 +583,6 @@ function saveTemplate(workout) {
     state.templates.push({ name, exercises });
   }
   save(); alert(`Saved template "${name}".`);
-}
-function deleteTemplate(i) {
-  if (!confirm(`Delete template "${state.templates[i].name}"?`)) return;
-  state.templates.splice(i, 1); save(); render();
 }
 function removeExercise(i) {
   if (!confirm(`Remove ${state.active.exercises[i].name}?`)) return;
@@ -535,7 +628,7 @@ function importData(file) {
     if (!Array.isArray(data.sessions)) throw new Error('bad file');
     if (!confirm(`Replace current data with ${data.sessions.length} workouts from file?`)) return;
     data.templates ??= [];
-    state = data; detail = null; save(); render();
+    state = data; detail = null; tplDraft = null; save(); render();
   }).catch(() => alert("Couldn't read that file."));
 }
 
@@ -544,7 +637,7 @@ function tickTimer() {
 }
 setInterval(tickTimer, 30000);
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; detail = null; selectedDay = null; render(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; detail = null; selectedDay = null; tplDraft = null; render(); });
 render();
 </script>
 </body>
