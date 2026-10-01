@@ -24,7 +24,10 @@
   }
   header {
     position: sticky; top: 0; z-index: 5; background: var(--bg);
-    padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
+    padding: calc(env(safe-area-inset-top) + 10px) 0 10px;
+    /* Line up with the centered content column on wide screens; clear the notch sideways */
+    padding-left: max(calc(env(safe-area-inset-left) + 16px), calc((100% - 640px) / 2 + 16px));
+    padding-right: max(calc(env(safe-area-inset-right) + 16px), calc((100% - 640px) / 2 + 16px));
   }
   header .back { background: none; color: var(--accent); padding: 4px 0; margin-bottom: 2px; font-size: 16px; }
   h1 { font-size: 22px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -56,8 +59,15 @@
     position: fixed; bottom: 0; left: 0; right: 0; display: flex;
     background: var(--card); border-top: 1px solid var(--line);
     padding-bottom: env(safe-area-inset-bottom);
+    /* Tabs stay within the content column on wide screens; the bar's background is full width */
+    padding-left: max(env(safe-area-inset-left), calc((100% - 640px) / 2));
+    padding-right: max(env(safe-area-inset-right), calc((100% - 640px) / 2));
   }
-  nav button { flex: 1; background: none; border-radius: 0; padding: 14px; color: var(--muted); }
+  nav button {
+    flex: 1; min-width: 0; background: none; border-radius: 0; padding: 14px 2px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  @media (max-width: 340px) { nav button { font-size: 14px; } }
   nav button.active { color: var(--accent); font-weight: 600; }
   .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
   .pill { display: inline-block; background: var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; margin: 2px; }
