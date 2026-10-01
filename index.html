@@ -15,10 +15,14 @@
   body {
     margin: 0; font-family: -apple-system, system-ui, sans-serif;
     background: var(--bg); color: var(--text);
-    padding: env(safe-area-inset-top) 0 calc(70px + env(safe-area-inset-bottom));
+    padding: 0 0 calc(70px + env(safe-area-inset-bottom));
   }
-  header { padding: 16px; display: flex; justify-content: space-between; align-items: center; }
-  h1 { font-size: 22px; margin: 0; }
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--bg);
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  }
+  header .back { background: none; color: var(--accent); padding: 4px 0; margin-bottom: 2px; font-size: 16px; }
+  h1 { font-size: 22px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   h2 { font-size: 17px; margin: 0 0 8px; }
   main { padding: 0 12px; max-width: 640px; margin: 0 auto; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
@@ -76,12 +80,49 @@
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tpl-row button:disabled { opacity: .35; cursor: default; }
   .data-table td, .data-table th { text-align: left; border-top: 1px solid var(--line); }
+  button.danger-fill { background: var(--danger); color: #fff; font-weight: 600; }
+  /* Screen transitions */
+  @keyframes push { from { opacity: 0; transform: translateX(32px); } }
+  @keyframes pop { from { opacity: 0; transform: translateX(-32px); } }
+  @keyframes fade { from { opacity: 0; } }
+  #view.anim-push { animation: push .22s ease-out; }
+  #view.anim-pop { animation: pop .22s ease-out; }
+  #view.anim-tab { animation: fade .15s ease-out; }
+  /* Bottom-sheet dialog */
+  .sheet-root { position: fixed; inset: 0; z-index: 20; }
+  .sheet-root[hidden] { display: none; }
+  .backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .55); opacity: 0; transition: opacity .2s; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto;
+    background: var(--card); border: 1px solid var(--line); border-bottom: 0; border-radius: 16px 16px 0 0;
+    padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+    transform: translateY(100%); transition: transform .22s ease-out;
+  }
+  .sheet-root.open .backdrop { opacity: 1; }
+  .sheet-root.open .sheet { transform: none; }
+  .sheet .grabber { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: -8px auto 14px; }
+  .sheet p { margin: 0 0 14px; font-size: 15px; }
+  .sheet input { margin-bottom: 14px; }
+  .toast {
+    position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content;
+    bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 30;
+    transform: translateY(16px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px;
+    font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); text-align: center;
+  }
+  .toast.show { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    #view, .sheet, .backdrop, .toast { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>Lift Log</h1>
-  <span class="muted" id="timer"></span>
+  <button id="back" class="back" hidden onclick="history.back()"></button>
+  <div class="row spread">
+    <h1 id="title">Lift Log</h1>
+    <span class="muted" id="timer"></span>
+  </div>
 </header>
 <main id="view"></main>
 <nav>
@@ -93,6 +134,21 @@
 
 <datalist id="exercise-list"></datalist>
 
+<div id="sheet" class="sheet-root" hidden>
+  <div class="backdrop" onclick="sheetDone(false)"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" aria-describedby="sheet-msg">
+    <div class="grabber"></div>
+    <h2 id="sheet-title"></h2>
+    <p class="muted" id="sheet-msg"></p>
+    <input id="sheet-input" hidden onkeydown="if(event.key==='Enter')sheetDone(true)">
+    <div class="row">
+      <button id="sheet-cancel" class="block" onclick="sheetDone(false)">Cancel</button>
+      <button id="sheet-ok" class="block primary" onclick="sheetDone(true)">OK</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <script>
 const KEY = 'liftlog.v1';
 const DEFAULT_EXERCISES = ['Squat', 'Bench Press', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-up', 'Romanian Deadlift', 'Incline Dumbbell Press', 'Lat Pulldown', 'Dumbbell Curl'];
@@ -103,8 +159,8 @@ let detail = null;        // exercise name shown in the progress view
 let metric = 'e1rm';
 let showTable = false;
 let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-let selectedDay = null;
-let tplDraft = null;      // template being created/edited in Settings   // 'YYYY-MM-DD' filter for the history list
+let selectedDay = null;   // 'YYYY-MM-DD' filter for the history list
+let tplDraft = null;      // template being created/edited
 
 function load() {
   let s = null;
@@ -135,12 +191,32 @@ function lastPerformance(name) {
 }
 
 // ---------- Views ----------
-function render() {
+const TAB_TITLES = { workout: 'Workout', history: 'History', exercises: 'Exercises', settings: 'Settings' };
+
+// anim: 'push' (into a sub-screen), 'pop' (back out of one), 'tab' (tab switch), or none
+function render(anim) {
+  const sub = tplDraft ? 'editor' : (tab === 'exercises' && detail) ? 'detail' : null;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $('#exercise-list').innerHTML = state.exercises.map(e => `<option value="${esc(e)}">`).join('');
-  const views = { workout: viewWorkout, history: viewHistory, exercises: detail ? viewExerciseDetail : viewExercises, settings: tplDraft ? viewTemplateEditor : viewSettings };
-  $('#view').innerHTML = views[tab]();
-  if (tab === 'exercises' && detail) drawChart();
+
+  const head = sub === 'editor' ? { title: tplDraft.idx === null ? 'New template' : 'Edit template', back: TAB_TITLES[tab] }
+    : sub === 'detail' ? { title: detail, back: 'Exercises' }
+    : { title: TAB_TITLES[tab], back: null };
+  $('#title').textContent = head.title;
+  const back = $('#back');
+  back.hidden = !head.back;
+  back.textContent = `‹ ${head.back}`;
+  back.setAttribute('aria-label', `Back to ${head.back}`);
+
+  const views = { workout: viewWorkout, history: viewHistory, exercises: viewExercises, settings: viewSettings };
+  const view = $('#view');
+  view.innerHTML = sub === 'editor' ? viewTemplateEditor() : sub === 'detail' ? viewExerciseDetail() : views[tab]();
+  if (anim) {
+    view.classList.remove('anim-push', 'anim-pop', 'anim-tab');
+    void view.offsetWidth;  // restart the animation
+    view.classList.add(`anim-${anim}`);
+  }
+  if (sub === 'detail') drawChart();
   tickTimer();
 }
 
@@ -325,7 +401,7 @@ function exercisePoints(name, key = metric) {
 }
 const availableMetrics = (name) => Object.keys(METRICS).filter(k => exercisePoints(name, k).length);
 
-function openDetail(name) { detail = name; showTable = false; render(); window.scrollTo(0, 0); }
+function openDetail(name) { detail = name; showTable = false; pushLayer('detail'); render('push'); window.scrollTo(0, 0); }
 
 function viewExerciseDetail() {
   const avail = availableMetrics(detail);
@@ -335,9 +411,7 @@ function viewExerciseDetail() {
   const latest = pts.at(-1), first = pts[0];
   const change = latest && pts.length > 1 ? latest.v - first.v : null;
   return `
-    <button class="small" style="margin-bottom:12px" onclick="detail=null;render()">‹ All exercises</button>
     <div class="card">
-      <h2>${esc(detail)}</h2>
       ${latest ? `
         <div class="muted">${m.label}, latest session</div>
         <div class="hero">${latest.v.toLocaleString()} ${unit}</div>
@@ -433,7 +507,7 @@ function drawChart() {
     else if (e.key === 'Escape') hide();
   };
 }
-window.addEventListener('resize', () => { if (tab === 'exercises' && detail) drawChart(); });
+window.addEventListener('resize', () => { if (tab === 'exercises' && detail && !tplDraft) drawChart(); });
 
 function viewSettings() {
   const templates = state.templates.map((t, i) => `
@@ -464,7 +538,7 @@ function viewSettings() {
         <button class="block" onclick="exportData()">Export</button>
         <button class="block" onclick="$('#import').click()">Import</button>
       </div>
-      <input type="file" id="import" accept="application/json" style="display:none" onchange="importData(this.files[0])">
+      <input type="file" id="import" accept="application/json" style="display:none" onchange="importData(this)">
     </div>`;
 }
 
@@ -474,9 +548,8 @@ function viewTemplateEditor() {
   const d = tplDraft;
   const last = d.exercises.length - 1;
   return `
-    <button class="small" style="margin-bottom:12px" onclick="tplCancel()">‹ Settings</button>
     <div class="card">
-      <h2>${d.idx === null ? 'New template' : 'Edit template'}</h2>
+      <h2>Name</h2>
       <input id="tpl-name" placeholder="Template name (e.g. Push day)" value="${esc(d.name)}" oninput="tplDraft.name=this.value">
     </div>
     <div class="card">
@@ -496,7 +569,7 @@ function viewTemplateEditor() {
       </div>
     </div>
     <div class="row" style="margin-bottom:12px">
-      <button class="block" onclick="tplCancel()">Cancel</button>
+      <button class="block" onclick="history.back()">Cancel</button>
       <button class="block primary" onclick="tplSave()">Save template</button>
     </div>
     ${d.idx === null ? '' : '<button class="block danger" style="margin-bottom:12px" onclick="tplDelete()">Delete template</button>'}`;
@@ -504,7 +577,7 @@ function viewTemplateEditor() {
 function editTemplate(i) {
   const t = i === null ? { name: '', exercises: [] } : state.templates[i];
   tplDraft = { idx: i, name: t.name, exercises: t.exercises.slice() };
-  tab = 'settings'; render(); window.scrollTo(0, 0);
+  pushLayer('editor'); render('push'); window.scrollTo(0, 0);
 }
 function tplAdd() {
   const name = $('#tpl-ex').value.trim();
@@ -524,28 +597,147 @@ function tplDirty() {
   const orig = d.idx === null ? { name: '', exercises: [] } : state.templates[d.idx];
   return d.name !== orig.name || JSON.stringify(d.exercises) !== JSON.stringify(orig.exercises);
 }
-function tplCancel() {
-  if (tplDirty() && !confirm('Discard changes to this template?')) return;
-  tplDraft = null; render();
-}
 function tplSave() {
   const d = tplDraft;
   const name = d.name.trim();
-  if (!name) return alert('Give the template a name.');
-  if (!d.exercises.length) return alert('Add at least one exercise.');
+  if (!name) return toast('Give the template a name.');
+  if (!d.exercises.length) return toast('Add at least one exercise.');
   const clash = state.templates.findIndex((t, i) => i !== d.idx && t.name.toLowerCase() === name.toLowerCase());
-  if (clash >= 0) return alert(`There's already a template called "${state.templates[clash].name}".`);
+  if (clash >= 0) return toast(`There's already a template called "${state.templates[clash].name}".`);
   for (const ex of d.exercises) {
     if (!state.exercises.some(e => e.toLowerCase() === ex.toLowerCase())) state.exercises.push(ex);
   }
   const t = { name, exercises: d.exercises };
   if (d.idx === null) state.templates.push(t); else state.templates[d.idx] = t;
-  tplDraft = null; save(); render();
+  save(); leaveEditor(); toast(`Saved "${name}"`);
 }
-function tplDelete() {
-  if (!confirm(`Delete template "${state.templates[tplDraft.idx].name}"?`)) return;
+async function tplDelete() {
+  const name = state.templates[tplDraft.idx].name;
+  if (!await ask({ title: `Delete "${name}"?`, message: "Past workouts started from it aren't affected.", confirm: 'Delete', danger: true })) return;
   state.templates.splice(tplDraft.idx, 1);
-  tplDraft = null; save(); render();
+  save(); leaveEditor(); toast(`Deleted "${name}"`);
+}
+
+// ---------- Navigation ----------
+// Every sub-screen and open dialog is a "layer" with a matching browser-history entry, so the
+// phone's back button, the header's ‹ button, and the edge swipe all go back the same way:
+// history.back() -> popstate -> close whatever is above the new depth.
+const layers = [];
+let skipGuard = false;    // set when leaving the editor on purpose (saved/deleted/discarded)
+let pendingTab = null;    // tab to show once sub-screens have been popped
+
+function pushLayer(type) {
+  layers.push({ type, y: window.scrollY });
+  history.pushState({ depth: layers.length }, '');
+}
+function leaveEditor() { skipGuard = true; history.back(); }
+
+window.addEventListener('popstate', (e) => {
+  const depth = e.state?.depth ?? 0;
+  if (depth > layers.length) { history.back(); return; }  // stale entry from before a reload
+  // Backing out of an edited template: undo the back and ask first
+  if (layers.at(-1)?.type === 'editor' && depth < layers.length && !skipGuard && tplDirty()) {
+    history.pushState({ depth: layers.length }, '');
+    confirmDiscard();
+    return;
+  }
+  skipGuard = false;
+  let popped = null;
+  while (layers.length > depth) {
+    const l = layers.pop();
+    if (l.type === 'sheet') closeSheet();
+    else { popped = l; if (l.type === 'editor') tplDraft = null; else detail = null; }
+  }
+  if (pendingTab) {
+    tab = pendingTab; pendingTab = null; selectedDay = null;
+    render('tab'); window.scrollTo(0, 0);
+  } else if (popped) {
+    render('pop'); window.scrollTo(0, popped.y);
+  }
+});
+
+async function confirmDiscard() {
+  if (await ask({ title: 'Discard changes?', message: "Your edits to this template won't be saved.", confirm: 'Discard', cancel: 'Keep editing', danger: true })) {
+    leaveEditor();
+  } else {
+    pendingTab = null;
+  }
+}
+
+function switchTab(t) {
+  if (layers.length) { pendingTab = t; history.go(-layers.length); return; }
+  tab = t; selectedDay = null;
+  render('tab'); window.scrollTo(0, 0);
+}
+
+// Swipe from the left edge to go back. Only when installed to the home screen; in a
+// browser tab, Safari's own swipe already does this.
+const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+let swipe = null;
+if (standalone) {
+  addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    swipe = t.clientX < 24 && layers.length && layers.at(-1).type !== 'sheet' ? { x: t.clientX, y: t.clientY } : null;
+  }, { passive: true });
+  addEventListener('touchend', (e) => {
+    if (!swipe) return;
+    const t = e.changedTouches[0];
+    if (t.clientX - swipe.x > 80 && Math.abs(t.clientY - swipe.y) < 60) history.back();
+    swipe = null;
+  }, { passive: true });
+}
+
+// ---------- Dialogs ----------
+// ask() resolves true/false; askText() resolves the trimmed text, or null if cancelled
+let sheet = null;
+function openSheet({ title, message = '', input = null, confirm = 'OK', cancel = 'Cancel', danger = false }) {
+  return new Promise((resolve) => {
+    const root = $('#sheet'), ok = $('#sheet-ok'), inp = $('#sheet-input');
+    $('#sheet-title').textContent = title;
+    $('#sheet-msg').textContent = message;
+    $('#sheet-msg').hidden = !message;
+    inp.hidden = !input;
+    if (input) { inp.value = input.value ?? ''; inp.placeholder = input.placeholder ?? ''; }
+    ok.textContent = confirm;
+    ok.className = `block ${danger ? 'danger-fill' : 'primary'}`;
+    $('#sheet-cancel').textContent = cancel;
+    sheet = { resolve, input: !!input, value: input ? null : false, closing: false, returnFocus: document.activeElement };
+    for (const el of ['header', 'main', 'nav']) $(el).inert = true;
+    root.hidden = false;
+    void root.offsetWidth;  // let the slide-up transition run
+    root.classList.add('open');
+    pushLayer('sheet');
+    (input ? inp : ok).focus();
+  });
+}
+const ask = (opts) => openSheet(opts);
+const askText = (opts) => openSheet({ ...opts, input: { value: opts.value, placeholder: opts.placeholder } });
+
+// Buttons/backdrop/keys record the answer, then go back; popstate closes the sheet
+function sheetDone(ok) {
+  if (!sheet || sheet.closing) return;
+  sheet.closing = true;
+  sheet.value = !ok ? (sheet.input ? null : false) : sheet.input ? ($('#sheet-input').value.trim() || null) : true;
+  history.back();
+}
+function closeSheet() {
+  const s = sheet;
+  sheet = null;
+  const root = $('#sheet');
+  root.classList.remove('open');
+  setTimeout(() => { if (!sheet) root.hidden = true; }, 220);
+  for (const el of ['header', 'main', 'nav']) $(el).inert = false;
+  s.returnFocus?.focus?.();
+  s.resolve(s.value);
+}
+document.addEventListener('keydown', (e) => { if (sheet && e.key === 'Escape') sheetDone(false); });
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
 // ---------- Actions ----------
@@ -560,7 +752,7 @@ function startWorkout(templateIdx) {
     const t = state.templates[templateIdx];
     state.active = { start: Date.now(), name: t?.name ?? '', exercises: t ? t.exercises.map(newExercise) : [] };
   }
-  save(); tab = 'workout'; render();
+  save(); switchTab('workout');
 }
 function addExercise() {
   const name = $('#new-ex').value.trim();
@@ -570,22 +762,25 @@ function addExercise() {
   save(); render();
   $('#new-ex').focus();
 }
-function saveTemplate(workout) {
-  if (!workout.exercises.length) return alert('Add some exercises first.');
-  const name = prompt('Template name:', workout.name || '')?.trim();
+async function saveTemplate(workout) {
+  if (!workout.exercises.length) return toast('Add some exercises first.');
+  const name = await askText({
+    title: 'Save as template', message: workout.exercises.map(e => e.name).join(' · '),
+    value: workout.name || '', placeholder: 'Template name', confirm: 'Save',
+  });
   if (!name) return;
   const exercises = workout.exercises.map(e => e.name);
   const existing = state.templates.findIndex(t => t.name.toLowerCase() === name.toLowerCase());
   if (existing >= 0) {
-    if (!confirm(`Replace the existing "${name}" template?`)) return;
+    if (!await ask({ title: `Replace "${state.templates[existing].name}"?`, message: 'A template with this name already exists.', confirm: 'Replace' })) return;
     state.templates[existing] = { name, exercises };
   } else {
     state.templates.push({ name, exercises });
   }
-  save(); alert(`Saved template "${name}".`);
+  save(); toast(`Saved template "${name}"`);
 }
-function removeExercise(i) {
-  if (!confirm(`Remove ${state.active.exercises[i].name}?`)) return;
+async function removeExercise(i) {
+  if (!await ask({ title: `Remove ${state.active.exercises[i].name}?`, message: 'Its sets in this workout will be removed too.', confirm: 'Remove', danger: true })) return;
   state.active.exercises.splice(i, 1); save(); render();
 }
 function addSet(i) {
@@ -597,21 +792,22 @@ function addSet(i) {
 function removeSet(i, j) { state.active.exercises[i].sets.splice(j, 1); save(); render(); }
 function setField(i, j, f, v) { state.active.exercises[i].sets[j][f] = v === '' ? null : Number(v); save(); }
 function toggleDone(i, j) { const s = state.active.exercises[i].sets[j]; s.done = !s.done; save(); render(); }
-function finishWorkout() {
+async function finishWorkout() {
   const w = state.active;
   if (!w.exercises.some(e => e.sets.some(s => s.done))) {
-    if (!confirm('No sets are ticked as done. Finish anyway?')) return;
+    if (!await ask({ title: 'Finish workout?', message: 'No sets are ticked as done yet.', confirm: 'Finish anyway' })) return;
   }
   w.end = Date.now();
   state.sessions.push(w); state.active = null;
-  save(); tab = 'history'; render();
+  save(); switchTab('history'); toast('Workout saved');
 }
-function cancelWorkout() {
-  if (!confirm('Discard this workout?')) return;
+async function cancelWorkout() {
+  if (!await ask({ title: 'Discard this workout?', message: 'Everything logged in this session will be lost.', confirm: 'Discard', danger: true })) return;
   state.active = null; save(); render();
 }
-function deleteSession(i) {
-  if (!confirm('Delete this workout from history?')) return;
+async function deleteSession(i) {
+  const s = state.sessions[i];
+  if (!await ask({ title: 'Delete this workout?', message: `${s.name || 'Workout'} on ${fmtDate(s.start)} will be removed from your history.`, confirm: 'Delete', danger: true })) return;
   state.sessions.splice(i, 1); save(); render();
 }
 function exportData() {
@@ -621,15 +817,21 @@ function exportData() {
   a.download = `liftlog-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
 }
-function importData(file) {
+async function importData(input) {
+  const file = input.files[0];
+  input.value = '';  // so picking the same file again still triggers a change
   if (!file) return;
-  file.text().then(t => {
-    const data = JSON.parse(t);
+  let data;
+  try {
+    data = JSON.parse(await file.text());
     if (!Array.isArray(data.sessions)) throw new Error('bad file');
-    if (!confirm(`Replace current data with ${data.sessions.length} workouts from file?`)) return;
-    data.templates ??= [];
-    state = data; detail = null; tplDraft = null; save(); render();
-  }).catch(() => alert("Couldn't read that file."));
+  } catch {
+    return toast("Couldn't read that file.");
+  }
+  if (!await ask({ title: 'Replace all data?', message: `Everything in the app will be replaced with the ${data.sessions.length} workouts in this file.`, confirm: 'Replace', danger: true })) return;
+  data.templates ??= [];
+  state = data; detail = null; tplDraft = null; save(); render();
+  toast('Data imported');
 }
 
 function tickTimer() {
@@ -637,7 +839,8 @@ function tickTimer() {
 }
 setInterval(tickTimer, 30000);
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; detail = null; selectedDay = null; tplDraft = null; render(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+history.replaceState({ depth: 0 }, '');
 render();
 </script>
 </body>
