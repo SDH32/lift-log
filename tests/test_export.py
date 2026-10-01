@@ -38,15 +38,15 @@ with sync_playwright() as p:
 
     # Phone: Export hands the backup to the share sheet
     page, downloads = open_app(b, phone=True)
-    check('dark color scheme declared (no white flashes on iOS)',
-          page.evaluate("getComputedStyle(document.documentElement).colorScheme") == 'dark'
-          and page.locator('meta[name=color-scheme][content=dark]').count() == 1)
+    # Browser's own backgrounds/controls follow the active mode (dark: no white flashes on iOS)
+    check('color scheme matches the active light/dark mode',
+          page.evaluate("getComputedStyle(document.documentElement).colorScheme === document.documentElement.dataset.theme"))
     check('phone counts as touch screen', page.evaluate("matchMedia('(pointer: coarse)').matches"))
     page.click('button:text-is("Export")'); page.wait_for_timeout(300)
     shared = page.evaluate("window.__shared")
     check('phone: opens share sheet with one file', len(shared) == 1 and not downloads)
     check('phone: file name uses local date', shared and shared[0]['name'] == f'liftlog-{TODAY}.json', shared and shared[0]['name'])
-    check('phone: file is the full backup', shared and shared[0]['type'] == 'application/json' and json.loads(shared[0]['text']) == stored(page))
+    check('phone: file is the full backup', shared and shared[0]['type'] == 'application/json' and json.loads(shared[0]['text']) == dict(SEED, theme='system'))
     # Closing the share sheet: nothing else happens
     page.evaluate("window.__share.result = 'AbortError'")
     page.click('button:text-is("Export")'); page.wait_for_timeout(300)
@@ -68,11 +68,11 @@ with sync_playwright() as p:
     d.value.save_as(path)
     check('computer: downloads (no share sheet)', page.evaluate("window.__shared.length") == 0)
     backup = json.loads(path.read_text())
-    check('computer: download is the full backup', backup == SEED)
+    check('computer: download is the full backup (plus appearance setting)', backup == dict(SEED, theme='system'))
     page.evaluate("localStorage.setItem('liftlog.v1', JSON.stringify({unit:'kg', sessions:[], active:null, exercises:[], templates:[]}))")
     page.reload(); page.click('nav button[data-tab=settings]')
     page.set_input_files('#import', str(path)); page.wait_for_selector('#sheet.open'); sheet_ok(page)
-    check('round trip: import restores everything', stored(page) == SEED and toast(page, 'Data imported'))
+    check('round trip: import restores everything', stored(page) == dict(SEED, theme='system') and toast(page, 'Data imported'))
     page.close()
     b.close()
 finish()

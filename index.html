@@ -7,16 +7,26 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Lift Log">
 <meta name="theme-color" content="#111418">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>Lift Log</title>
 <style>
+  /* Colors: dark by default; light when data-theme="light" (set by applyTheme below).
+     All text pairs meet WCAG AA contrast (4.5:1); the chart line meets 3:1.
+     color-scheme makes the browser's own backgrounds/controls match, so iOS never flashes white. */
   :root {
-    color-scheme: dark;  /* dark default backgrounds/controls, so iOS never flashes white */
-    --bg: #111418; --card: #1b1f25; --line: #2a3038; --text: #e8eaed;
-    --muted: #8b939e; --accent: #4f9cf9; --danger: #e5484d; --ok: #3fb950;
+    color-scheme: dark;
+    --bg: #111418; --card: #1b1f25; --line: #2a3038; --text: #e8eaed; --muted: #8b939e;
+    --accent: #4f9cf9; --accent-fill: #2a70d6; --danger: #ec5b60; --danger-fill: #d93036;
+    --ok: #3fb950; --series-1: #3987e5;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f2f3f5; --card: #ffffff; --line: #d5dae0; --text: #14171c; --muted: #5f6873;
+    --accent: #1a66cc; --accent-fill: #1a66cc; --danger: #c62a30; --danger-fill: #c62a30;
+    --ok: #1a7f37; --series-1: #2a78d6;
   }
   * { box-sizing: border-box; }
   body {
@@ -43,7 +53,7 @@
     font: inherit; border: 0; border-radius: 8px; padding: 10px 14px;
     background: var(--line); color: var(--text); cursor: pointer;
   }
-  button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  button.primary { background: var(--accent-fill); color: #fff; font-weight: 600; }
   button.danger { background: transparent; color: var(--danger); padding: 6px 8px; }
   button.small { padding: 6px 10px; font-size: 14px; }
   button.block { width: 100%; }
@@ -79,7 +89,7 @@
   .seg button.on { background: var(--line); color: var(--text); font-weight: 600; }
   .hero { font-size: 30px; font-weight: 700; }
   /* Chart: single series, dark surface. Series color = reference palette slot 1 (dark). */
-  .chart { --series-1: #3987e5; --surface: var(--card); position: relative; touch-action: pan-y; }
+  .chart { --surface: var(--card); position: relative; touch-action: pan-y; }
   .chart svg { display: block; overflow: visible; }
   .chart svg:focus { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
   .chart .tip {
@@ -91,14 +101,14 @@
   .cal .dow { color: var(--muted); font-size: 12px; padding: 4px 0; }
   .cal .day { padding: 0; aspect-ratio: 1; max-height: 44px; width: 100%; border-radius: 50%; background: none; color: var(--muted); font-size: 14px; }
   .cal .day:disabled { cursor: default; }
-  .cal .day.has { background: var(--accent); color: #fff; font-weight: 600; }
+  .cal .day.has { background: var(--accent-fill); color: #fff; font-weight: 600; }
   .cal .day.today { box-shadow: inset 0 0 0 2px var(--text); }
   .cal .day.sel { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
   .tpl-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tpl-row button:disabled { opacity: .35; cursor: default; }
   .data-table td, .data-table th { text-align: left; border-top: 1px solid var(--line); }
-  button.danger-fill { background: var(--danger); color: #fff; font-weight: 600; }
+  button.danger-fill { background: var(--danger-fill); color: #fff; font-weight: 600; }
   /* Screen transitions */
   @keyframes push { from { opacity: 0; transform: translateX(32px); } }
   @keyframes pop { from { opacity: 0; transform: translateX(-32px); } }
@@ -133,6 +143,20 @@
     #view, .sheet, .backdrop, .toast { animation: none !important; transition: none !important; }
   }
 </style>
+<script>
+  // Light/dark: 'system' follows the phone's setting. Runs before the page is drawn, so the
+  // saved choice shows from the first frame (no flash of the other mode).
+  function applyTheme(pref) {
+    const mode = pref === 'light' || pref === 'dark' ? pref
+      : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = mode;
+    document.querySelector('meta[name=theme-color]').content =
+      getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  }
+  let savedTheme;
+  try { savedTheme = JSON.parse(localStorage.getItem('liftlog.v1'))?.theme; } catch {}
+  applyTheme(savedTheme);
+</script>
 </head>
 <body>
 <header>
@@ -185,6 +209,7 @@ function load() {
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch {}
   s ??= { unit: 'lb', sessions: [], active: null, exercises: DEFAULT_EXERCISES.slice() };
   s.templates ??= [];
+  s.theme ??= 'system';
   return s;
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -550,6 +575,14 @@ function viewSettings() {
       </select>
     </div>
     <div class="card">
+      <h2>Appearance</h2>
+      <div class="seg" role="group" aria-label="Appearance">
+        ${[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([k, label]) =>
+          `<button class="${state.theme === k ? 'on' : ''}" aria-pressed="${state.theme === k}" onclick="setTheme('${k}')">${label}</button>`).join('')}
+      </div>
+      <p class="muted" style="margin:0">${state.theme === 'system' ? "Matches your phone's light/dark setting." : `Always ${state.theme}.`}</p>
+    </div>
+    <div class="card">
       <h2>Backup</h2>
       <p class="muted">Data lives only in this browser. Export regularly so you don't lose it.</p>
       <div class="row">
@@ -850,9 +883,14 @@ async function importData(input) {
   }
   if (!await ask({ title: 'Replace all data?', message: `Everything in the app will be replaced with the ${data.sessions.length} workouts in this file.`, confirm: 'Replace', danger: true })) return;
   data.templates ??= [];
-  state = data; detail = null; tplDraft = null; save(); render();
+  data.theme ??= 'system';
+  state = data; detail = null; tplDraft = null; save(); applyTheme(state.theme); render();
   toast('Data imported');
 }
+
+function setTheme(t) { state.theme = t; save(); applyTheme(t); render(); }
+// Follow the phone switching between light and dark (e.g. automatically at sunset)
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyTheme(state.theme));
 
 function tickTimer() {
   $('#timer').textContent = state.active ? `⏱ ${fmtDur(Date.now() - state.active.start)}` : '';
