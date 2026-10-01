@@ -2,6 +2,7 @@
 Run: python3 tests/test_install.py (needs Playwright)."""
 import functools, http.server, json, pathlib, shutil, socketserver, sys, tempfile, threading, time
 from playwright.sync_api import sync_playwright
+import helpers
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SITE = pathlib.Path(tempfile.mkdtemp())
@@ -11,9 +12,20 @@ for name in ['index.html', 'manifest.webmanifest', 'sw.js']: shutil.copy(ROOT / 
 shutil.copytree(ROOT / 'icons', APP / 'icons')
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
 Handler.log_message = lambda *a: None
+socketserver.TCPServer.allow_reuse_address = True
 server = socketserver.TCPServer(('localhost', 0), Handler)
+PORT = server.server_address[1]
 threading.Thread(target=server.serve_forever, daemon=True).start()
-URL = f'http://localhost:{server.server_address[1]}/lift-log/'
+URL = f'http://localhost:{PORT}/lift-log/'
+
+def server_down():  # like the connection dropping: nothing answers on the port
+    global server
+    server.shutdown(); server.server_close()
+
+def server_up():
+    global server
+    server = socketserver.TCPServer(('localhost', PORT), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
 
 FAILED = []
 def check(label, cond, extra=''):
@@ -21,7 +33,7 @@ def check(label, cond, extra=''):
     if not cond: FAILED.append(label)
 errors = []
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = helpers.launch(p)
     ctx = b.new_context(viewport={'width': 412, 'height': 915}, has_touch=True, is_mobile=True,
                         user_agent='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36')
     page = ctx.new_page()
@@ -29,21 +41,26 @@ with sync_playwright() as p:
     page.goto(URL)
     page.evaluate("navigator.serviceWorker.ready"); page.reload()
     check('offline helper active', page.evaluate("!!navigator.serviceWorker.controller"))
-    cdp = ctx.new_cdp_session(page)
-    m = cdp.send('Page.getAppManifest')
-    check('manifest loads without errors', not m.get('errors') and '"standalone"' in m.get('data', ''), m.get('errors') or '')
-    inst = cdp.send('Page.getInstallabilityErrors')['installabilityErrors']
-    check('Chrome considers it installable', inst == [], inst or '')
+    if helpers.BROWSER == 'chromium':  # these checks use Chrome's dev tools
+        cdp = ctx.new_cdp_session(page)
+        m = cdp.send('Page.getAppManifest')
+        check('manifest loads without errors', not m.get('errors') and '"standalone"' in m.get('data', ''), m.get('errors') or '')
+        inst = cdp.send('Page.getInstallabilityErrors')['installabilityErrors']
+        check('Chrome considers it installable', inst == [], inst or '')
     for icon in ['icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon.svg']:
         r = page.request.get(URL + icon)
         check(f'{icon} served', r.ok and r.headers['content-type'].startswith('image/'))
     # Offline: the app still opens and works
-    ctx.set_offline(True)
+    # Go offline. WebKit's test browser crashes if its offline switch is used with an offline
+    # helper, so on WebKit the test server is switched off instead.
+    if helpers.BROWSER == 'webkit': server_down()
+    else: ctx.set_offline(True)
     page.reload()
     page.click('nav button[data-tab=workout]'); page.click('text=Start empty workout')
     page.fill('#new-ex', 'Squat'); page.press('#new-ex', 'Enter')
     check('opens and works offline', page.text_content('#title') == 'Workout' and page.locator('h2:text-is("Squat")').count() == 1)
-    ctx.set_offline(False)
+    if helpers.BROWSER == 'webkit': server_up()
+    else: ctx.set_offline(False)
     # Updates: a new version on the server shows up on the next online load
     time.sleep(1.2)  # the test server tracks changes to the second
     f = APP / 'index.html'

@@ -27,7 +27,7 @@ MEASURE = """() => {
 }"""
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = helpers.launch(p)
     for name, (w, h) in SIZES.items():
         page = b.new_page(viewport={'width': w, 'height': h}, has_touch=True)
         page.on('pageerror', lambda e: helpers.ERRORS.append(str(e)))

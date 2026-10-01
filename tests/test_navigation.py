@@ -17,7 +17,7 @@ with app(seed=SEED) as page:
     # Sub-screen: header, back target, animation, and browser/Android back
     page.click('nav button[data-tab=exercises]')
     check('root tab has no back button', page.is_hidden('#back') and title(page) == 'Exercises')
-    page.mouse.wheel(0, 1200); page.wait_for_timeout(200)
+    page.evaluate('scrollTo(0, document.documentElement.scrollHeight)'); page.wait_for_timeout(200)  # (WebKit's simulated wheel reports unclamped positions)
     y_before = page.evaluate('scrollY')
     page.locator('.card:has(h2:text-is("Lat Pulldown"))').click()
     check('detail: title + back label', title(page) == 'Lat Pulldown' and page.text_content('#back') == '‹ Exercises')
@@ -146,15 +146,21 @@ TOUCH = """(seq) => {
   for (const [type, x] of seq)
     document.body.dispatchEvent(new TouchEvent(type, { touches: type === 'touchstart' ? [t(x)] : [], changedTouches: [t(x)], bubbles: true }));
 }"""
-with app(seed=SEED, ios=True) as page:
-    page.add_init_script("Object.defineProperty(navigator, 'standalone', { value: true })")
-    page.reload()
-    url = page.url
-    open_editor(page)
-    page.evaluate(TOUCH, [['touchstart', 6], ['touchmove', 100], ['touchend', 200]]); page.wait_for_timeout(300)
-    check('edge-swipe touches alone do not go back (iOS does it)', depth(page) == 1 and title(page) == 'New template')
-    page.evaluate(TOUCH, [['touchstart', 6]]); page.go_back(); page.evaluate(TOUCH, [['touchend', 200]])
-    page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
-    check('iOS swipe back: one back, no extra slide', anims(page) == 0 and depth(page) == 0 and page.url == url)
+def ios_home_screen_swipe():
+    with app(seed=SEED, ios=True) as page:
+        page.add_init_script("Object.defineProperty(navigator, 'standalone', { value: true })")
+        page.reload()
+        url = page.url
+        open_editor(page)
+        if page.evaluate("(() => { try { new Touch({ identifier: 1, target: document.body }); return false; } catch { return true; } })()"):
+            print('SKIP edge-swipe touch checks (this engine cannot simulate touches)')
+            return
+        page.evaluate(TOUCH, [['touchstart', 6], ['touchmove', 100], ['touchend', 200]]); page.wait_for_timeout(300)
+        check('edge-swipe touches alone do not go back (iOS does it)', depth(page) == 1 and title(page) == 'New template')
+        page.evaluate(TOUCH, [['touchstart', 6]]); page.go_back(); page.evaluate(TOUCH, [['touchend', 200]])
+        page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
+        check('iOS swipe back: one back, no extra slide', anims(page) == 0 and depth(page) == 0 and page.url == url)
+
+ios_home_screen_swipe()
 
 finish()

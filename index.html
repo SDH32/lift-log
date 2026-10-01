@@ -899,6 +899,7 @@ setInterval(tickTimer, 30000);
 
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 history.replaceState({ depth: 0 }, '');
+history.scrollRestoration = 'manual';  // the app restores scroll itself; don't let the browser also try
 render();
 
 // Offline support (only when served over http(s); not when opening the file directly)

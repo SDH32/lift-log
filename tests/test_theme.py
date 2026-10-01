@@ -38,7 +38,7 @@ def open_app(b, scheme, seed=SEED):
 def saved_theme(page): return json.loads(page.evaluate("localStorage.getItem('liftlog.v1')"))['theme']
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = helpers.launch(p)
 
     # The theme is applied by a script in <head>, before the page body is drawn (no flash)
     html = open(helpers.URL.replace('file://', '')).read()

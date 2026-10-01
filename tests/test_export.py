@@ -34,7 +34,7 @@ def open_app(b, phone):
 def stored(page): return json.loads(page.evaluate("localStorage.getItem('liftlog.v1')"))
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = helpers.launch(p)
 
     # Phone: Export hands the backup to the share sheet
     page, downloads = open_app(b, phone=True)
