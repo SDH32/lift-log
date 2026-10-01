@@ -120,7 +120,8 @@ with app(seed=SEED) as page:
     page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
     check('Android/system back elsewhere: slides', anims(page) == 1)
 
-# Edge swipe (home-screen app only)
+# Home-screen iPhone app: iOS does the edge swipe itself. The swipe's touches must not trigger a
+# back from the app too, and the resulting system back must not get the app's slide on top.
 TOUCH = """(seq) => {
   const t = (x) => new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
   for (const [type, x] of seq)
@@ -130,26 +131,11 @@ with app(seed=SEED, ios=True) as page:
     page.add_init_script("Object.defineProperty(navigator, 'standalone', { value: true })")
     page.reload()
     url = page.url
-    # iOS took over the gesture (touchcancel): the app must not go back as well
-    page.click('nav button[data-tab=exercises]'); page.locator('.card').first.click()
-    page.evaluate(TOUCH, [['touchstart', 6], ['touchcancel', 160], ['touchend', 160]]); page.wait_for_timeout(300)
-    check('touchcancel: no extra back', depth(page) == 1 and title(page) != 'Exercises')
-    # A system back during the swipe: the swipe's own back must not fire too
-    page.evaluate(TOUCH, [['touchstart', 6]]); page.go_back()
-    page.wait_for_function("document.querySelector('#title').textContent === 'Exercises'")
-    page.evaluate(TOUCH, [['touchend', 160]]); page.wait_for_timeout(300)
-    check('system back mid-swipe: only one back', page.url == url and title(page) == 'Exercises' and depth(page) == 0)
-
-with app(seed=SEED) as page:
-    page.add_init_script("Object.defineProperty(navigator, 'standalone', { value: true })")
-    page.reload()
-    page.click('nav button[data-tab=exercises]'); page.locator('.card').first.click()
-    page.evaluate("""() => {
-      const t = (x) => new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
-      document.body.dispatchEvent(new TouchEvent('touchstart', { touches: [t(6)], changedTouches: [t(6)], bubbles: true }));
-      document.body.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(160)], bubbles: true }));
-    }""")
-    page.wait_for_function("document.querySelector('#title').textContent === 'Exercises'")
-    check('edge swipe goes back', depth(page) == 0)
+    open_editor(page)
+    page.evaluate(TOUCH, [['touchstart', 6], ['touchmove', 100], ['touchend', 200]]); page.wait_for_timeout(300)
+    check('edge-swipe touches alone do not go back (iOS does it)', depth(page) == 1 and title(page) == 'New template')
+    page.evaluate(TOUCH, [['touchstart', 6]]); page.go_back(); page.evaluate(TOUCH, [['touchend', 200]])
+    page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
+    check('iOS swipe back: one back, no extra slide', anims(page) == 0 and depth(page) == 0 and page.url == url)
 
 finish()

@@ -620,13 +620,14 @@ async function tplDelete() {
 
 // ---------- Navigation ----------
 // Every sub-screen and open dialog is a "layer" with a matching browser-history entry, so the
-// phone's back button, the header's ‹ button, and the edge swipe all go back the same way:
+// phone's back button/gesture and the header's ‹ button all go back the same way:
 // history.back() -> popstate -> close whatever is above the new depth.
 const layers = [];
 let skipGuard = false;    // set when leaving the editor on purpose (saved/deleted/discarded)
 let pendingTab = null;    // tab to show once sub-screens have been popped
 let appBack = false;      // true when the app started this back, false when the browser/OS did
-// iOS animates its own back swipe, so the app skips its slide there to avoid a double animation
+// iOS animates its own back swipe (in Safari and home-screen apps), so the app skips its slide
+// for system backs there to avoid a double animation
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function pushLayer(type) {
@@ -640,7 +641,6 @@ window.addEventListener('popstate', (e) => {
   const depth = e.state?.depth ?? 0;
   const fromApp = appBack;
   appBack = false;
-  swipe = null;  // a back already happened; don't let an in-progress edge swipe fire another
   if (depth > layers.length) { appBack = fromApp; history.back(); return; }  // stale entry from before a reload
   // Backing out of an edited template: undo the back and ask first
   if (layers.at(-1)?.type === 'editor' && depth < layers.length && !skipGuard && tplDirty()) {
@@ -675,25 +675,6 @@ function switchTab(t) {
   if (layers.length) { pendingTab = t; appBack = true; history.go(-layers.length); return; }
   tab = t; selectedDay = null;
   render('tab'); window.scrollTo(0, 0);
-}
-
-// Swipe from the left edge to go back. Only when installed to the home screen; in a
-// browser tab, Safari's own swipe already does this.
-const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
-let swipe = null;
-if (standalone) {
-  addEventListener('touchstart', (e) => {
-    const t = e.touches[0];
-    swipe = t.clientX < 24 && layers.length && layers.at(-1).type !== 'sheet' ? { x: t.clientX, y: t.clientY } : null;
-  }, { passive: true });
-  addEventListener('touchend', (e) => {
-    if (!swipe) return;
-    const t = e.changedTouches[0];
-    if (t.clientX - swipe.x > 80 && Math.abs(t.clientY - swipe.y) < 60) goBack();
-    swipe = null;
-  }, { passive: true });
-  // iOS cancels the page's touch when it takes over a gesture itself
-  addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
 }
 
 // ---------- Dialogs ----------
