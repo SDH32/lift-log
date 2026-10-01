@@ -99,6 +99,25 @@ with app(seed=SEED) as page:
     page.reload()
     check('reload lands on a root screen', page.is_hidden('#back') and depth(page) == 0)
 
+# iOS zooms into any field with text under 16px when tapped (and stays zoomed), so none may be smaller
+SMALL_FIELDS = """() => [...document.querySelectorAll('input:not([type=file]), select, textarea')]
+  .filter(e => e.offsetParent !== null && parseFloat(getComputedStyle(e).fontSize) < 16)
+  .map(e => e.id || e.placeholder || e.tagName)"""
+FITS = "document.documentElement.scrollWidth <= innerWidth"
+with app() as page:
+    small = []
+    page.click('nav button[data-tab=workout]'); page.click('text=Start empty workout')
+    page.fill('#new-ex', 'Romanian Deadlift'); page.press('#new-ex', 'Enter')
+    page.locator('input[placeholder=BW]').fill('1225.5'); page.locator('input[inputmode=numeric]').fill('12')
+    small += page.evaluate(SMALL_FIELDS)
+    check('set rows fit the screen width', page.evaluate(FITS))
+    page.screenshot(path=SHOTS / 'zoom-1-workout.png')
+    page.click('text=Save as template'); page.wait_for_selector('#sheet.open'); small += page.evaluate(SMALL_FIELDS)
+    page.keyboard.press('Escape'); page.wait_for_selector('#sheet', state='hidden')
+    page.click('nav button[data-tab=settings]'); small += page.evaluate(SMALL_FIELDS)
+    page.click('text=+ New template'); small += page.evaluate(SMALL_FIELDS)
+    check('no field under 16px (prevents iOS zoom)', small == [], small)
+
 # Back animation: iOS animates its own back swipe, so system backs there must not slide again
 def anims(page):
     page.wait_for_timeout(50)  # let any animation start

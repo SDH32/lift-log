@@ -10,8 +10,8 @@ IPHONE_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit
              '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')
 
 
-def check(label, cond):
-    print(('PASS ' if cond else 'FAIL ') + label)
+def check(label, cond, extra=''):
+    print(('PASS ' if cond else 'FAIL ') + label, extra if not cond else '')
     if not cond: FAILED.append(label)
 
 

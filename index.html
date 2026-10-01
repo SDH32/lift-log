@@ -43,7 +43,8 @@
   button.small { padding: 6px 10px; font-size: 14px; }
   button.block { width: 100%; }
   input, select {
-    font: inherit; background: var(--bg); color: var(--text);
+    /* 16px minimum: iOS zooms into any field with smaller text when you tap it */
+    font: inherit; font-size: max(16px, 1em); background: var(--bg); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 100%;
   }
   input[type=number] { text-align: center; }
