@@ -99,7 +99,47 @@ with app(seed=SEED) as page:
     page.reload()
     check('reload lands on a root screen', page.is_hidden('#back') and depth(page) == 0)
 
+# Back animation: iOS animates its own back swipe, so system backs there must not slide again
+def anims(page):
+    page.wait_for_timeout(50)  # let any animation start
+    return page.evaluate("document.querySelector('#view').getAnimations().length")
+
+def open_editor(page):
+    page.click('nav button[data-tab=settings]'); page.click('text=+ New template'); page.wait_for_timeout(300)
+
+with app(seed=SEED, ios=True) as page:
+    open_editor(page); page.go_back()
+    page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
+    check('iOS system back (swipe): no extra slide', anims(page) == 0)
+    open_editor(page); page.click('#back')
+    page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
+    check('iOS header back: slides', anims(page) == 1)
+
+with app(seed=SEED) as page:
+    open_editor(page); page.go_back()
+    page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
+    check('Android/system back elsewhere: slides', anims(page) == 1)
+
 # Edge swipe (home-screen app only)
+TOUCH = """(seq) => {
+  const t = (x) => new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
+  for (const [type, x] of seq)
+    document.body.dispatchEvent(new TouchEvent(type, { touches: type === 'touchstart' ? [t(x)] : [], changedTouches: [t(x)], bubbles: true }));
+}"""
+with app(seed=SEED, ios=True) as page:
+    page.add_init_script("Object.defineProperty(navigator, 'standalone', { value: true })")
+    page.reload()
+    url = page.url
+    # iOS took over the gesture (touchcancel): the app must not go back as well
+    page.click('nav button[data-tab=exercises]'); page.locator('.card').first.click()
+    page.evaluate(TOUCH, [['touchstart', 6], ['touchcancel', 160], ['touchend', 160]]); page.wait_for_timeout(300)
+    check('touchcancel: no extra back', depth(page) == 1 and title(page) != 'Exercises')
+    # A system back during the swipe: the swipe's own back must not fire too
+    page.evaluate(TOUCH, [['touchstart', 6]]); page.go_back()
+    page.wait_for_function("document.querySelector('#title').textContent === 'Exercises'")
+    page.evaluate(TOUCH, [['touchend', 160]]); page.wait_for_timeout(300)
+    check('system back mid-swipe: only one back', page.url == url and title(page) == 'Exercises' and depth(page) == 0)
+
 with app(seed=SEED) as page:
     page.add_init_script("Object.defineProperty(navigator, 'standalone', { value: true })")
     page.reload()

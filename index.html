@@ -118,7 +118,7 @@
 </head>
 <body>
 <header>
-  <button id="back" class="back" hidden onclick="history.back()"></button>
+  <button id="back" class="back" hidden onclick="goBack()"></button>
   <div class="row spread">
     <h1 id="title">Lift Log</h1>
     <span class="muted" id="timer"></span>
@@ -569,7 +569,7 @@ function viewTemplateEditor() {
       </div>
     </div>
     <div class="row" style="margin-bottom:12px">
-      <button class="block" onclick="history.back()">Cancel</button>
+      <button class="block" onclick="goBack()">Cancel</button>
       <button class="block primary" onclick="tplSave()">Save template</button>
     </div>
     ${d.idx === null ? '' : '<button class="block danger" style="margin-bottom:12px" onclick="tplDelete()">Delete template</button>'}`;
@@ -625,16 +625,23 @@ async function tplDelete() {
 const layers = [];
 let skipGuard = false;    // set when leaving the editor on purpose (saved/deleted/discarded)
 let pendingTab = null;    // tab to show once sub-screens have been popped
+let appBack = false;      // true when the app started this back, false when the browser/OS did
+// iOS animates its own back swipe, so the app skips its slide there to avoid a double animation
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function pushLayer(type) {
   layers.push({ type, y: window.scrollY });
   history.pushState({ depth: layers.length }, '');
 }
-function leaveEditor() { skipGuard = true; history.back(); }
+function goBack() { appBack = true; history.back(); }
+function leaveEditor() { skipGuard = true; goBack(); }
 
 window.addEventListener('popstate', (e) => {
   const depth = e.state?.depth ?? 0;
-  if (depth > layers.length) { history.back(); return; }  // stale entry from before a reload
+  const fromApp = appBack;
+  appBack = false;
+  swipe = null;  // a back already happened; don't let an in-progress edge swipe fire another
+  if (depth > layers.length) { appBack = fromApp; history.back(); return; }  // stale entry from before a reload
   // Backing out of an edited template: undo the back and ask first
   if (layers.at(-1)?.type === 'editor' && depth < layers.length && !skipGuard && tplDirty()) {
     history.pushState({ depth: layers.length }, '');
@@ -652,7 +659,7 @@ window.addEventListener('popstate', (e) => {
     tab = pendingTab; pendingTab = null; selectedDay = null;
     render('tab'); window.scrollTo(0, 0);
   } else if (popped) {
-    render('pop'); window.scrollTo(0, popped.y);
+    render(fromApp || !IOS ? 'pop' : undefined); window.scrollTo(0, popped.y);
   }
 });
 
@@ -665,7 +672,7 @@ async function confirmDiscard() {
 }
 
 function switchTab(t) {
-  if (layers.length) { pendingTab = t; history.go(-layers.length); return; }
+  if (layers.length) { pendingTab = t; appBack = true; history.go(-layers.length); return; }
   tab = t; selectedDay = null;
   render('tab'); window.scrollTo(0, 0);
 }
@@ -682,9 +689,11 @@ if (standalone) {
   addEventListener('touchend', (e) => {
     if (!swipe) return;
     const t = e.changedTouches[0];
-    if (t.clientX - swipe.x > 80 && Math.abs(t.clientY - swipe.y) < 60) history.back();
+    if (t.clientX - swipe.x > 80 && Math.abs(t.clientY - swipe.y) < 60) goBack();
     swipe = null;
   }, { passive: true });
+  // iOS cancels the page's touch when it takes over a gesture itself
+  addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
 }
 
 // ---------- Dialogs ----------
@@ -718,7 +727,7 @@ function sheetDone(ok) {
   if (!sheet || sheet.closing) return;
   sheet.closing = true;
   sheet.value = !ok ? (sheet.input ? null : false) : sheet.input ? ($('#sheet-input').value.trim() || null) : true;
-  history.back();
+  goBack();
 }
 function closeSheet() {
   const s = sheet;

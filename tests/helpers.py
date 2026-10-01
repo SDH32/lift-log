@@ -6,6 +6,8 @@ from playwright.sync_api import sync_playwright
 URL = (pathlib.Path(__file__).resolve().parent.parent / 'index.html').as_uri()
 SHOTS = pathlib.Path('/tmp/shots'); SHOTS.mkdir(exist_ok=True)
 FAILED, ERRORS = [], []
+IPHONE_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 '
+             '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')
 
 
 def check(label, cond):
@@ -14,10 +16,11 @@ def check(label, cond):
 
 
 @contextmanager
-def app(fresh=True, seed=None):
+def app(fresh=True, seed=None, ios=False):
     with sync_playwright() as p:
         b = p.chromium.launch()
-        page = b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2, has_touch=True)
+        ua = {'user_agent': IPHONE_UA} if ios else {}
+        page = b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2, has_touch=True, **ua)
         page.on('pageerror', lambda e: ERRORS.append(str(e)))
         page.on('dialog', lambda d: (ERRORS.append(f'native {d.type}: {d.message}'), d.dismiss()))
         page.goto(URL)
