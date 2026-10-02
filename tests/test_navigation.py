@@ -1,13 +1,14 @@
 """Browser test for navigation, back handling, and dialogs. Run: python3 tests/test_navigation.py"""
-import json, time
+import datetime, json
 from helpers import app, check, data, finish, sheet_ok, sheet_cancel, sheet_title, sheet_open, toast, title, SHOTS
 
-DAY = 86400000
-now = int(time.time() * 1000)
+# Workouts an hour apart on the 1st of this month, so they're all in the History tab's month list
+month_start = int(datetime.datetime.combine(datetime.date.today().replace(day=1), datetime.time()).timestamp() * 1000)
+HOUR = 3600000
 def S(w, r): return {'weight': w, 'reps': r, 'done': True}
 LIFTS = ['Squat', 'Bench Press', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-up', 'Dips', 'Lunge', 'Curl', 'Lat Pulldown']
 SEED = {'unit': 'lb', 'active': None, 'exercises': LIFTS, 'templates': [],
-        'sessions': [{'name': f'Day {i}', 'start': now - (10 - i) * DAY, 'end': now - (10 - i) * DAY + 3600000,
+        'sessions': [{'name': f'Day {i}', 'start': month_start + i * HOUR, 'end': month_start + i * HOUR + 1800000,
                       'exercises': [{'name': n, 'sets': [S(100 + i * 5, 5)]} for n in LIFTS]} for i in range(6)]}
 depth = lambda page: page.evaluate("history.state && history.state.depth")
 view_anim = lambda page: page.get_attribute('#view', 'class') or ''

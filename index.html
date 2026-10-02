@@ -327,13 +327,16 @@ function viewHistory() {
   if (!state.sessions.length) return `<div class="empty">No workouts logged yet.<br><br><button class="primary" onclick="startWorkout()">Start your first</button></div>`;
   // Drop a day filter that no longer matches anything (e.g. its only session was deleted)
   if (selectedDay && !state.sessions.some(s => dayKey(s.start) === selectedDay)) selectedDay = null;
+  // The list follows the calendar: the month shown, or just the day tapped
+  const monthName = calMonth.toLocaleDateString(undefined, { month: 'long' });
   const shown = state.sessions.map((s, idx) => ({ s, idx }))
-    .filter(({ s }) => !selectedDay || dayKey(s.start) === selectedDay)
+    .filter(({ s }) => selectedDay ? dayKey(s.start) === selectedDay : sameMonth(s.start, calMonth))
     .sort((a, b) => b.s.start - a.s.start);
   const filterBar = selectedDay ? `<div class="row spread" style="margin:0 4px 12px">
-      <span>Showing ${fmtDate(shown[0].s.start)}</span>
-      <button class="small" onclick="selectedDay=null;render()">Show all</button>
+      <b>${fmtDate(shown[0].s.start)}</b>
+      <button class="small" style="white-space:nowrap" onclick="selectedDay=null;render()">All of ${monthName}</button>
     </div>` : '';
+  if (!shown.length) return viewCalendar() + `<div class="empty">No workouts in ${monthName}.</div>`;
   return viewCalendar() + filterBar + shown.map(({ s, idx }) => {
     const vol = s.exercises.reduce((t, e) => t + volume(e), 0);
     return `<div class="card">
@@ -385,7 +388,8 @@ function viewCalendar() {
     </div>
   </div>`;
 }
-function shiftMonth(n) { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + n, 1); render(); }
+function shiftMonth(n) { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + n, 1); selectedDay = null; render(); }
+function sameMonth(ts, month) { const d = new Date(ts); return d.getFullYear() === month.getFullYear() && d.getMonth() === month.getMonth(); }
 function selectDay(key) { selectedDay = selectedDay === key ? null : key; render(); }
 
 function viewExercises() {

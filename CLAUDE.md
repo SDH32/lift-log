@@ -63,6 +63,8 @@ Python at `/usr/bin/python3`).
 - Known WebKit **test-tool** limits (not app bugs): no synthetic `Touch` (those checks skip), and
   `set_offline` crashes with a service worker (`test_install.py` stops its server instead).
   WebKit's simulated wheel reports unclamped scroll positions.
+- History lists only the calendar's month (or a tapped day), so seed test workouts relative to
+  today's month — fixed "last N days" dates break early in a month.
 - When fixing a bug, first show the test fails on the old version (`git show HEAD:index.html`),
   then passes on the new one. Look at screenshots after layout changes, not just pass counts.
 - **Android emulator** (headless Pixel 8, Android 16): `sh tests/android/start_emulator.sh`, then

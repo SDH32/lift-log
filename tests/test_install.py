@@ -12,8 +12,12 @@ for name in ['index.html', 'manifest.webmanifest', 'sw.js']: shutil.copy(ROOT / 
 shutil.copytree(ROOT / 'icons', APP / 'icons')
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
 Handler.log_message = lambda *a: None
-socketserver.TCPServer.allow_reuse_address = True
-server = socketserver.TCPServer(('localhost', 0), Handler)
+# Threaded: WebKit can hold one connection open idle while it waits on another, which stalls a
+# one-at-a-time server and makes the first page load time out now and then
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+server = Server(('localhost', 0), Handler)
 PORT = server.server_address[1]
 threading.Thread(target=server.serve_forever, daemon=True).start()
 URL = f'http://localhost:{PORT}/lift-log/'
@@ -24,7 +28,7 @@ def server_down():  # like the connection dropping: nothing answers on the port
 
 def server_up():
     global server
-    server = socketserver.TCPServer(('localhost', PORT), Handler)
+    server = Server(('localhost', PORT), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 FAILED = []
