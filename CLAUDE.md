@@ -52,8 +52,8 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
 - Form fields stay at **16px or larger** text (iOS zooms into smaller fields and stays zoomed).
 - Respect `env(safe-area-inset-*)`; header and tabs line up with the 640px content column.
 - Animations must respect `prefers-reduced-motion`.
-- Touch-and-drag areas (like the progress chart) get `user-select: none` and
-  `-webkit-touch-callout: none`; focus outlines use `:focus-visible` so taps don't leave them.
+- Text selection and the iOS long-press menu are off app-wide (like a native app) and back on
+  for `input`/`textarea`. Focus outlines use `:focus-visible` so taps don't leave them.
 
 ## Testing
 

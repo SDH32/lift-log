@@ -29,6 +29,10 @@
     --ok: #1a7f37; --series-1: #2a78d6;
   }
   * { box-sizing: border-box; }
+  /* Like a native app: long-press or drag doesn't select text or pop up the iOS menu, except in
+     fields, where selecting is how you fix a typo or retype a number */
+  html { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   body {
     margin: 0; font-family: -apple-system, system-ui, sans-serif;
     background: var(--bg); color: var(--text);
@@ -93,8 +97,6 @@
   .chart svg { display: block; overflow: visible; }
   .chart svg:focus { outline: none; }
   .chart svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }  /* keyboard only */
-  /* Sliding a finger along the chart shouldn't select text or pop up the iOS long-press menu */
-  .chart-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .chart .tip {
     position: absolute; top: 0; pointer-events: none; background: var(--bg); border: 1px solid var(--line);
     border-radius: 8px; padding: 6px 10px; font-size: 13px; white-space: nowrap; display: none;
@@ -461,7 +463,7 @@ function viewExerciseDetail() {
   const latest = pts.at(-1), first = pts[0];
   const change = latest && pts.length > 1 ? latest.v - first.v : null;
   return `
-    <div class="card chart-card">
+    <div class="card">
       ${latest ? `
         <div class="muted">${m.label}, latest session</div>
         <div class="hero">${latest.v.toLocaleString()} ${unit}</div>

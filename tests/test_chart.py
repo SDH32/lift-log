@@ -24,8 +24,8 @@ with app(seed=SEED) as page:
     page.mouse.move(box['x'] + box['width'] - 4, box['y'] - 60, steps=5)
     page.mouse.up()
     check('dragging across the chart selects no text', selected(page) == '', repr(selected(page)))
-    check('chart card text is not selectable', page.locator('#chart').evaluate(
-        "e => getComputedStyle(e.closest('.card')).webkitUserSelect") == 'none')
+    check('chart text is not selectable', page.locator('#chart').evaluate(
+        "e => getComputedStyle(e).webkitUserSelect") == 'none')
 
     page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
     check('tooltip shows on tap', page.locator('#chart .tip').is_visible())
