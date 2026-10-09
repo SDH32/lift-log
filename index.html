@@ -67,6 +67,8 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 100%;
   }
   input[type=number] { text-align: center; }
+  label.field { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
+  label.field input { margin-top: 4px; min-height: 44px; }
   table { width: 100%; border-collapse: collapse; font-size: 15px; }
   td, th { padding: 6px 4px; text-align: center; }
   th { color: var(--muted); font-weight: 500; font-size: 12px; }
@@ -208,6 +210,7 @@ let showTable = false;
 let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let selectedDay = null;   // 'YYYY-MM-DD' filter for the history list
 let tplDraft = null;      // template being created/edited
+let pastDraft = null;     // past workout being added/edited from History
 
 function load() {
   let s = null;
@@ -229,25 +232,30 @@ const volume = (ex) => ex.sets.filter(s => s.done).reduce((t, s) => t + (s.weigh
 // Epley estimate
 const e1rm = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
 
-// Most recent completed sets for an exercise, for "last time" hints
-function lastPerformance(name) {
+// Most recent completed sets for an exercise, for "last time" hints. When editing a past workout,
+// only sessions before it count, and never the workout itself.
+function lastPerformance(name, before = Infinity, skip = -1) {
   for (let i = state.sessions.length - 1; i >= 0; i--) {
+    if (i === skip || state.sessions[i].start >= before) continue;
     const ex = state.sessions[i].exercises.find(e => e.name.toLowerCase() === name.toLowerCase());
     if (ex && ex.sets.some(s => s.done)) return { date: state.sessions[i].start, sets: ex.sets.filter(s => s.done) };
   }
   return null;
 }
+// The workout the exercise cards edit: a past one being edited, otherwise the live one
+const wk = () => pastDraft ?? state.active;
 
 // ---------- Views ----------
 const TAB_TITLES = { workout: 'Workout', history: 'History', exercises: 'Exercises', settings: 'Settings' };
 
 // anim: 'push' (into a sub-screen), 'pop' (back out of one), 'tab' (tab switch), or none
 function render(anim) {
-  const sub = tplDraft ? 'editor' : (tab === 'exercises' && detail) ? 'detail' : null;
+  const sub = tplDraft ? 'editor' : pastDraft ? 'past' : (tab === 'exercises' && detail) ? 'detail' : null;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $('#exercise-list').innerHTML = state.exercises.map(e => `<option value="${esc(e)}">`).join('');
 
   const head = sub === 'editor' ? { title: tplDraft.idx === null ? 'New template' : 'Edit template', back: TAB_TITLES[tab] }
+    : sub === 'past' ? { title: pastDraft.idx === null ? 'Log workout' : 'Edit workout', back: 'History' }
     : sub === 'detail' ? { title: detail, back: 'Exercises' }
     : { title: TAB_TITLES[tab], back: null };
   $('#title').textContent = head.title;
@@ -258,7 +266,8 @@ function render(anim) {
 
   const views = { workout: viewWorkout, history: viewHistory, exercises: viewExercises, settings: viewSettings };
   const view = $('#view');
-  view.innerHTML = sub === 'editor' ? viewTemplateEditor() : sub === 'detail' ? viewExerciseDetail() : views[tab]();
+  view.innerHTML = sub === 'editor' ? viewTemplateEditor() : sub === 'past' ? viewPastEditor()
+    : sub === 'detail' ? viewExerciseDetail() : views[tab]();
   if (anim) {
     view.classList.remove('anim-push', 'anim-pop', 'anim-tab');
     void view.offsetWidth;  // restart the animation
@@ -305,7 +314,8 @@ function viewWorkout() {
 }
 
 function exerciseCard(ex, i) {
-  const last = lastPerformance(ex.name);
+  const past = !!pastDraft;  // past workouts: every set entered counts, so no done ticks
+  const last = past ? lastPerformance(ex.name, pastStart(), pastDraft.idx ?? -1) : lastPerformance(ex.name);
   const lastTxt = last ? `Last (${fmtDate(last.date)}): ${last.sets.map(fmtSet).join(', ')}` : 'First time logging this';
   return `<div class="card">
     <div class="row spread">
@@ -314,13 +324,13 @@ function exerciseCard(ex, i) {
     </div>
     <div class="muted">${esc(lastTxt)}</div>
     <table>
-      <tr><th>Set</th><th>${state.unit}</th><th>Reps</th><th></th><th></th></tr>
+      <tr><th>Set</th><th>${state.unit}</th><th>Reps</th>${past ? '' : '<th></th>'}<th></th></tr>
       ${ex.sets.map((s, j) => `
-        <tr class="${s.done ? 'done' : ''}">
+        <tr class="${s.done && !past ? 'done' : ''}">
           <td>${j + 1}</td>
           <td><input type="number" inputmode="decimal" placeholder="BW" value="${s.weight ?? ''}" onchange="setField(${i},${j},'weight',this.value)"></td>
           <td><input type="number" inputmode="numeric" value="${s.reps ?? ''}" onchange="setField(${i},${j},'reps',this.value)"></td>
-          <td><button class="small ${s.done ? 'primary' : ''}" onclick="toggleDone(${i},${j})">✓</button></td>
+          ${past ? '' : `<td><button class="small ${s.done ? 'primary' : ''}" onclick="toggleDone(${i},${j})">✓</button></td>`}
           <td><button class="danger small" onclick="removeSet(${i},${j})">✕</button></td>
         </tr>`).join('')}
     </table>
@@ -347,7 +357,10 @@ function viewHistory() {
     return `<div class="card">
       <div class="row spread">
         <h2>${esc(s.name || 'Workout')}</h2>
-        <button class="danger" onclick="deleteSession(${idx})">Delete</button>
+        <div class="row" style="gap:0">
+          <button class="small" onclick="editPast(${idx})">Edit</button>
+          <button class="danger" onclick="deleteSession(${idx})">Delete</button>
+        </div>
       </div>
       <div class="muted">${fmtDate(s.start)} · ${fmtDur(s.end - s.start)} · ${vol.toLocaleString()} ${state.unit} volume</div>
       ${s.exercises.map(e => `<div style="margin-top:8px"><b>${esc(e.name)}</b><br>
@@ -376,7 +389,8 @@ function viewCalendar() {
     const names = byDay[key];
     const label = `${new Date(y, mo, d).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}: ${names ? names.join(', ') : 'rest day'}`;
     const cls = ['day', names && 'has', key === today && 'today', key === selectedDay && 'sel'].filter(Boolean).join(' ');
-    cells.push(`<button class="${cls}" aria-label="${esc(label)}" title="${esc(label)}" ${names ? `onclick="selectDay('${key}')"` : 'disabled'}>${d}</button>`);
+    const action = names ? `selectDay('${key}')` : key <= today ? `logOnDay('${key}')` : null;
+    cells.push(`<button class="${cls}" aria-label="${esc(label)}" title="${esc(label)}" ${action ? `onclick="${action}"` : 'disabled'}>${d}</button>`);
   }
   return `<div class="card">
     <div class="row spread">
@@ -396,6 +410,10 @@ function viewCalendar() {
 function shiftMonth(n) { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + n, 1); selectedDay = null; render(); }
 function sameMonth(ts, month) { const d = new Date(ts); return d.getFullYear() === month.getFullYear() && d.getMonth() === month.getMonth(); }
 function selectDay(key) { selectedDay = selectedDay === key ? null : key; render(); }
+async function logOnDay(key) {
+  const date = fmtDate(dateFromKey(key));
+  if (await ask({ title: 'Log a workout?', message: `Add a workout you did on ${date}.`, confirm: 'Log workout' })) editPast(null, key);
+}
 
 function viewExercises() {
   // Best set and last-done date per exercise; weighted lifts rank by est. 1RM, bodyweight by reps
@@ -602,6 +620,77 @@ function viewSettings() {
     </div>`;
 }
 
+// ---------- Past workout editor ----------
+// Adds a forgotten workout or fixes a logged one. Edits a draft copy; nothing is saved until "Save".
+const dateFromKey = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
+const PAST_HOUR = 18;  // workouts added after the fact start at 6 pm; only the date is shown
+function pastStart() {
+  const d = pastDraft;
+  const orig = d.idx === null ? null : state.sessions[d.idx];
+  if (orig && dayKey(orig.start) === d.date) return orig.start;  // same day: keep the real start time
+  const t = dateFromKey(d.date) + PAST_HOUR * 3600000;
+  return Math.min(t, Date.now() - d.minutes * 60000);  // today, before 6 pm: end it now instead
+}
+const pastFields = (d) => JSON.stringify([d.name, d.date, d.minutes, d.exercises]);
+function editPast(idx, day) {
+  const s = idx === null ? null : state.sessions[idx];
+  pastDraft = s ? {
+    idx, name: s.name || '', date: dayKey(s.start), minutes: Math.max(1, Math.round((s.end - s.start) / 60000)),
+    exercises: s.exercises.map(e => ({ ...e, sets: e.sets.filter(x => x.done).map(x => ({ ...x })) })),
+  } : { idx: null, name: '', date: day, minutes: 60, exercises: [] };
+  pastDraft.orig = pastFields(pastDraft);
+  pushLayer('past'); render('push'); window.scrollTo(0, 0);
+}
+const pastDirty = () => pastFields(pastDraft) !== pastDraft.orig;
+function viewPastEditor() {
+  const d = pastDraft;
+  const fromTemplate = d.idx === null && !d.exercises.length && state.templates.length ? `
+    <div class="card">
+      <h2>Start from a template</h2>
+      <div class="row" style="flex-wrap:wrap">
+        ${state.templates.map((t, i) => `<button class="small" onclick="pastFromTemplate(${i})">${esc(t.name)}</button>`).join('')}
+      </div>
+    </div>` : '';
+  return `
+    <div class="card">
+      <input placeholder="Workout name (e.g. Push day)" value="${esc(d.name)}" oninput="pastDraft.name=this.value">
+      <div class="row" style="margin-top:8px">
+        <label class="field">Date<input type="date" id="past-date" value="${d.date}" max="${dayKey(Date.now())}" onchange="pastDraft.date=this.value"></label>
+        <label class="field">Minutes<input type="number" id="past-min" inputmode="numeric" min="1" value="${d.minutes}" oninput="pastDraft.minutes=Number(this.value)"></label>
+      </div>
+    </div>
+    ${fromTemplate}
+    ${d.exercises.map((ex, i) => exerciseCard(ex, i)).join('')}
+    <div class="card">
+      <div class="row">
+        <input id="new-ex" list="exercise-list" placeholder="Add exercise…" onkeydown="if(event.key==='Enter')addExercise()">
+        <button class="primary" onclick="addExercise()">Add</button>
+      </div>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="block" onclick="goBack()">Cancel</button>
+      <button class="block primary" onclick="pastSave()">Save</button>
+    </div>`;
+}
+function pastFromTemplate(i) { pastDraft.exercises = state.templates[i].exercises.map(newExercise); if (!pastDraft.name) pastDraft.name = state.templates[i].name; render(); }
+function pastSave() {
+  const d = pastDraft;
+  if (!d.date || d.date > dayKey(Date.now())) return toast('Pick a date up to today.');
+  if (!(d.minutes >= 1)) return toast('Enter how many minutes it took.');
+  // Every set with reps counts; empty sets and lifts with no sets are dropped
+  const exercises = d.exercises
+    .map(e => ({ ...e, sets: e.sets.filter(x => x.reps).map(x => ({ ...x, done: true })) }))
+    .filter(e => e.sets.length);
+  if (!exercises.length) return toast('Add at least one set with reps.');
+  const start = pastStart();
+  const session = { ...(d.idx === null ? {} : state.sessions[d.idx]), name: d.name.trim(), start, end: start + d.minutes * 60000, exercises };
+  if (d.idx === null) state.sessions.push(session); else state.sessions[d.idx] = session;
+  state.sessions.sort((a, b) => a.start - b.start);  // "last time" hints read the list in date order
+  calMonth = new Date(new Date(start).getFullYear(), new Date(start).getMonth(), 1);  // show where it landed
+  selectedDay = null;
+  save(); leaveEditor(); toast(d.idx === null ? 'Workout added' : 'Workout updated');
+}
+
 // ---------- Template editor ----------
 // Edits a draft copy; nothing is saved until "Save template"
 function viewTemplateEditor() {
@@ -702,10 +791,11 @@ window.addEventListener('popstate', (e) => {
   const fromApp = appBack;
   appBack = false;
   if (depth > layers.length) { appBack = fromApp; history.back(); return; }  // stale entry from before a reload
-  // Backing out of an edited template: undo the back and ask first
-  if (layers.at(-1)?.type === 'editor' && depth < layers.length && !skipGuard && tplDirty()) {
+  // Backing out of an editor with unsaved changes: undo the back and ask first
+  const top = layers.at(-1)?.type;
+  if (depth < layers.length && !skipGuard && ((top === 'editor' && tplDirty()) || (top === 'past' && pastDirty()))) {
     history.pushState({ depth: layers.length }, '');
-    confirmDiscard();
+    confirmDiscard(top === 'editor' ? 'this template' : 'this workout');
     return;
   }
   skipGuard = false;
@@ -713,7 +803,7 @@ window.addEventListener('popstate', (e) => {
   while (layers.length > depth) {
     const l = layers.pop();
     if (l.type === 'sheet') closeSheet();
-    else { popped = l; if (l.type === 'editor') tplDraft = null; else detail = null; }
+    else { popped = l; if (l.type === 'editor') tplDraft = null; else if (l.type === 'past') pastDraft = null; else detail = null; }
   }
   if (pendingTab) {
     tab = pendingTab; pendingTab = null; selectedDay = null;
@@ -723,8 +813,8 @@ window.addEventListener('popstate', (e) => {
   }
 });
 
-async function confirmDiscard() {
-  if (await ask({ title: 'Discard changes?', message: "Your edits to this template won't be saved.", confirm: 'Discard', cancel: 'Keep editing', danger: true })) {
+async function confirmDiscard(what) {
+  if (await ask({ title: 'Discard changes?', message: `Your edits to ${what} won't be saved.`, confirm: 'Discard', cancel: 'Keep editing', danger: true })) {
     leaveEditor();
   } else {
     pendingTab = null;
@@ -793,7 +883,7 @@ function toast(msg) {
 // ---------- Actions ----------
 // Pre-fill with last session's sets so you just adjust and tick
 function newExercise(name) {
-  const last = lastPerformance(name);
+  const last = pastDraft ? lastPerformance(name, pastStart(), pastDraft.idx ?? -1) : lastPerformance(name);
   const sets = last ? last.sets.map(s => ({ weight: s.weight, reps: s.reps, done: false })) : [{ weight: null, reps: null, done: false }];
   return { name, sets };
 }
@@ -808,7 +898,7 @@ function addExercise() {
   const name = $('#new-ex').value.trim();
   if (!name) return;
   if (!state.exercises.some(e => e.toLowerCase() === name.toLowerCase())) state.exercises.push(name);
-  state.active.exercises.push(newExercise(name));
+  wk().exercises.push(newExercise(name));
   save(); render();
   $('#new-ex').focus();
 }
@@ -830,18 +920,18 @@ async function saveTemplate(workout) {
   save(); toast(`Saved template "${name}"`);
 }
 async function removeExercise(i) {
-  if (!await ask({ title: `Remove ${state.active.exercises[i].name}?`, message: 'Its sets in this workout will be removed too.', confirm: 'Remove', danger: true })) return;
-  state.active.exercises.splice(i, 1); save(); render();
+  if (!await ask({ title: `Remove ${wk().exercises[i].name}?`, message: 'Its sets in this workout will be removed too.', confirm: 'Remove', danger: true })) return;
+  wk().exercises.splice(i, 1); save(); render();
 }
 function addSet(i) {
-  const sets = state.active.exercises[i].sets;
+  const sets = wk().exercises[i].sets;
   const prev = sets[sets.length - 1];
   sets.push({ weight: prev?.weight ?? null, reps: prev?.reps ?? null, done: false });
   save(); render();
 }
-function removeSet(i, j) { state.active.exercises[i].sets.splice(j, 1); save(); render(); }
-function setField(i, j, f, v) { state.active.exercises[i].sets[j][f] = v === '' ? null : Number(v); save(); }
-function toggleDone(i, j) { const s = state.active.exercises[i].sets[j]; s.done = !s.done; save(); render(); }
+function removeSet(i, j) { wk().exercises[i].sets.splice(j, 1); save(); render(); }
+function setField(i, j, f, v) { wk().exercises[i].sets[j][f] = v === '' ? null : Number(v); save(); }
+function toggleDone(i, j) { const s = wk().exercises[i].sets[j]; s.done = !s.done; save(); render(); }
 async function finishWorkout() {
   const w = state.active;
   if (!w.exercises.some(e => e.sets.some(s => s.done))) {
@@ -893,7 +983,7 @@ async function importData(input) {
   if (!await ask({ title: 'Replace all data?', message: `Everything in the app will be replaced with the ${data.sessions.length} workouts in this file.`, confirm: 'Replace', danger: true })) return;
   data.templates ??= [];
   data.theme ??= 'system';
-  state = data; detail = null; tplDraft = null; save(); applyTheme(state.theme); render();
+  state = data; detail = null; tplDraft = null; pastDraft = null; save(); applyTheme(state.theme); render();
   toast('Data imported');
 }
 

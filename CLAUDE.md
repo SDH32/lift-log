@@ -31,12 +31,17 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
   active, sessions[{name, start, end, exercises[{name, sets[{weight, reps, done}]}]}] }`.
   `load()` back-fills new fields (`??=`) so old data and old backup files keep working — do the
   same for any new field, and in `importData`. A set with no weight is a bodyweight set.
+  `sessions` is kept sorted by `start` (the "last time" hints read it in order) — re-sort after
+  adding or re-dating one.
 - **Rendering**: views return HTML strings; `render(anim)` redraws `#view` and the header. Escape
   user text with `esc()` in templates; use `textContent` when building DOM directly.
-- **Navigation**: every sub-screen (exercise detail, template editor) and every dialog is a *layer*
+- **Past workouts**: History's Edit button and tapping a rest day open the past-workout editor
+  (`pastDraft`), which reuses the live workout's exercise cards — those act on `wk()`, the draft
+  if one is open, else `state.active`. Past workouts have no done ticks; every set with reps counts.
+- **Navigation**: every sub-screen (exercise detail, template editor, past-workout editor) and every dialog is a *layer*
   with its own history entry. Going back is always `history.back()` → `popstate` closes whatever
   is above the new depth. Use `goBack()` for app-initiated backs. Switching tabs unwinds layers.
-  The template editor guards unsaved edits on any kind of exit.
+  Both editors guard unsaved edits on any kind of exit.
 - **iOS back swipe is native** (Safari and home-screen apps). Never add a custom swipe handler —
   it caused a double animation. System backs on iOS skip the app's slide animation.
 - **Dialogs**: never use `alert`/`confirm`/`prompt`. Use `await ask({...})`, `await askText({...})`,
