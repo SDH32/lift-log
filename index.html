@@ -67,6 +67,9 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 100%;
   }
   input[type=number] { text-align: center; }
+  .note { border-left: 2px solid var(--line); padding-left: 8px; margin-top: 4px; font-size: 14px; overflow-wrap: anywhere; }
+  button.note-btn { display: block; width: 100%; text-align: left; background: none; padding: 6px 0 2px; font-size: 14px; color: var(--accent); }
+  button.note-btn.note { color: var(--text); border-radius: 0; padding: 0 0 0 8px; margin-top: 6px; }
   label.field { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
   label.field input { margin-top: 4px; min-height: 44px; }
   table { width: 100%; border-collapse: collapse; font-size: 15px; }
@@ -103,6 +106,7 @@
     position: absolute; top: 0; pointer-events: none; background: var(--bg); border: 1px solid var(--line);
     border-radius: 8px; padding: 6px 10px; font-size: 13px; white-space: nowrap; display: none;
   }
+  .chart .tip .tip-note { white-space: normal; width: max-content; max-width: 220px; margin-top: 4px; border-left: 2px solid var(--line); padding-left: 6px; }
   .chart .tip .key { display: inline-block; width: 12px; height: 2px; background: var(--series-1); vertical-align: middle; margin-right: 6px; }
   .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 10px; text-align: center; }
   .cal .dow { color: var(--muted); font-size: 12px; padding: 4px 0; }
@@ -244,6 +248,11 @@ function lastPerformance(name, before = Infinity, skip = -1) {
 }
 // The workout the exercise cards edit: a past one being edited, otherwise the live one
 const wk = () => pastDraft ?? state.active;
+// i = exercise index, or null for the workout's own note
+const noteButton = (note, i) => note
+  ? `<button class="note-btn note" onclick="editNote(${i})" aria-label="Edit note: ${esc(note)}">${esc(note)}</button>`
+  : `<button class="note-btn" onclick="editNote(${i})">+ Add note</button>`;
+const noteLine = (note) => note ? `<div class="note">${esc(note)}</div>` : '';
 
 // ---------- Views ----------
 const TAB_TITLES = { workout: 'Workout', history: 'History', exercises: 'Exercises', settings: 'Settings' };
@@ -298,6 +307,7 @@ function viewWorkout() {
   return `
     <div class="card">
       <input placeholder="Workout name (e.g. Push day)" value="${esc(w.name || '')}" onchange="state.active.name=this.value;save()">
+      ${noteButton(w.note, null)}
     </div>
     ${w.exercises.map((ex, i) => exerciseCard(ex, i)).join('')}
     <div class="card">
@@ -323,6 +333,7 @@ function exerciseCard(ex, i) {
       <button class="danger" onclick="removeExercise(${i})">Remove</button>
     </div>
     <div class="muted">${esc(lastTxt)}</div>
+    ${noteButton(ex.note, i)}
     <table>
       <tr><th>Set</th><th>${state.unit}</th><th>Reps</th>${past ? '' : '<th></th>'}<th></th></tr>
       ${ex.sets.map((s, j) => `
@@ -363,7 +374,8 @@ function viewHistory() {
         </div>
       </div>
       <div class="muted">${fmtDate(s.start)} · ${fmtDur(s.end - s.start)} · ${vol.toLocaleString()} ${state.unit} volume</div>
-      ${s.exercises.map(e => `<div style="margin-top:8px"><b>${esc(e.name)}</b><br>
+      ${noteLine(s.note)}
+      ${s.exercises.map(e => `<div style="margin-top:8px"><b>${esc(e.name)}</b>${noteLine(e.note) || '<br>'}
         ${e.sets.filter(x => x.done).map(x => `<span class="pill">${fmtSet(x)}</span>`).join('') || '<span class="muted">no sets</span>'}
       </div>`).join('')}
       <button class="small" style="margin-top:10px" onclick="saveTemplate(state.sessions[${idx}])">Save as template</button>
@@ -465,7 +477,7 @@ function exercisePoints(name, key = metric) {
   for (const s of state.sessions) {
     const ex = s.exercises.find(e => e.name.toLowerCase() === name.toLowerCase());
     const sets = ex ? ex.sets.filter(x => x.done && x.reps && !!x.weight === m.weighted) : [];
-    if (sets.length) pts.push({ date: s.start, sets, v: m.get(sets) });
+    if (sets.length) pts.push({ date: s.start, sets, v: m.get(sets), notes: [ex.note, s.note].filter(Boolean) });
   }
   return pts.sort((a, b) => a.date - b.date);
 }
@@ -494,7 +506,7 @@ function viewExerciseDetail() {
       <button class="small" style="margin-top:10px" onclick="showTable=!showTable;render()">${showTable ? 'Hide' : 'Show'} table</button>
       ${showTable ? `<table class="data-table" style="margin-top:8px">
         <tr><th>Date</th><th>Sets</th><th>${m.label}</th></tr>
-        ${pts.slice().reverse().map(p => `<tr><td>${fmtDate(p.date)}</td><td>${p.sets.map(fmtSet).join(', ')}</td><td>${p.v.toLocaleString()}</td></tr>`).join('')}
+        ${pts.slice().reverse().map(p => `<tr><td>${fmtDate(p.date)}</td><td>${p.sets.map(fmtSet).join(', ')}${p.notes.map(n => `<div class="muted">${esc(n)}</div>`).join('')}</td><td>${p.v.toLocaleString()}</td></tr>`).join('')}
       </table>` : ''}
     </div>`;
 }
@@ -534,6 +546,7 @@ function drawChart() {
       <line class="xhair" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>
       <polyline points="${pts.map(p => `${X(p.date)},${Y(p.v)}`).join(' ')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${pts.map(p => `<circle cx="${X(p.date)}" cy="${Y(p.v)}" r="4" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2"/>`).join('')}
+      ${pts.filter(p => p.notes.length).map(p => `<circle class="noted" cx="${X(p.date)}" cy="${Y(p.v)}" r="8" fill="none" stroke="var(--series-1)" stroke-width="1.5"/>`).join('')}
       <circle class="hover-dot" r="6" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
       <text x="${Math.min(X(last.date), W - pad.r)}" y="${Y(last.v) - 12}" text-anchor="end" fill="var(--text)" font-size="12" font-weight="600">${last.v.toLocaleString()}</text>
     </svg>
@@ -556,6 +569,7 @@ function drawChart() {
     const sets = document.createElement('div');
     sets.className = 'muted'; sets.textContent = p.sets.map(fmtSet).join(', ');
     tip.append(head, val, sets);
+    for (const n of p.notes) { const el = document.createElement('div'); el.className = 'tip-note'; el.textContent = n; tip.append(el); }
     tip.style.display = 'block';
     tip.style.left = Math.max(0, Math.min(px - tip.offsetWidth / 2, W - tip.offsetWidth)) + 'px';
     tip.style.top = Math.max(0, py - tip.offsetHeight - 14) + 'px';
@@ -631,11 +645,11 @@ function pastStart() {
   const t = dateFromKey(d.date) + PAST_HOUR * 3600000;
   return Math.min(t, Date.now() - d.minutes * 60000);  // today, before 6 pm: end it now instead
 }
-const pastFields = (d) => JSON.stringify([d.name, d.date, d.minutes, d.exercises]);
+const pastFields = (d) => JSON.stringify([d.name, d.date, d.minutes, d.note, d.exercises]);
 function editPast(idx, day) {
   const s = idx === null ? null : state.sessions[idx];
   pastDraft = s ? {
-    idx, name: s.name || '', date: dayKey(s.start), minutes: Math.max(1, Math.round((s.end - s.start) / 60000)),
+    idx, name: s.name || '', note: s.note, date: dayKey(s.start), minutes: Math.max(1, Math.round((s.end - s.start) / 60000)),
     exercises: s.exercises.map(e => ({ ...e, sets: e.sets.filter(x => x.done).map(x => ({ ...x })) })),
   } : { idx: null, name: '', date: day, minutes: 60, exercises: [] };
   pastDraft.orig = pastFields(pastDraft);
@@ -658,6 +672,7 @@ function viewPastEditor() {
         <label class="field">Date<input type="date" id="past-date" value="${d.date}" max="${dayKey(Date.now())}" onchange="pastDraft.date=this.value"></label>
         <label class="field">Minutes<input type="number" id="past-min" inputmode="numeric" min="1" value="${d.minutes}" oninput="pastDraft.minutes=Number(this.value)"></label>
       </div>
+      ${noteButton(d.note, null)}
     </div>
     ${fromTemplate}
     ${d.exercises.map((ex, i) => exerciseCard(ex, i)).join('')}
@@ -683,7 +698,8 @@ function pastSave() {
     .filter(e => e.sets.length);
   if (!exercises.length) return toast('Add at least one set with reps.');
   const start = pastStart();
-  const session = { ...(d.idx === null ? {} : state.sessions[d.idx]), name: d.name.trim(), start, end: start + d.minutes * 60000, exercises };
+  const session = { ...(d.idx === null ? {} : state.sessions[d.idx]), name: d.name.trim(), note: d.note, start, end: start + d.minutes * 60000, exercises };
+  if (!session.note) delete session.note;
   if (d.idx === null) state.sessions.push(session); else state.sessions[d.idx] = session;
   state.sessions.sort((a, b) => a.start - b.start);  // "last time" hints read the list in date order
   calMonth = new Date(new Date(start).getFullYear(), new Date(start).getMonth(), 1);  // show where it landed
@@ -828,7 +844,7 @@ function switchTab(t) {
 }
 
 // ---------- Dialogs ----------
-// ask() resolves true/false; askText() resolves the trimmed text, or null if cancelled
+// ask() resolves true/false; askText() resolves the trimmed text ('' if left empty), or null if cancelled
 let sheet = null;
 function openSheet({ title, message = '', input = null, confirm = 'OK', cancel = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
@@ -857,7 +873,7 @@ const askText = (opts) => openSheet({ ...opts, input: { value: opts.value, place
 function sheetDone(ok) {
   if (!sheet || sheet.closing) return;
   sheet.closing = true;
-  sheet.value = !ok ? (sheet.input ? null : false) : sheet.input ? ($('#sheet-input').value.trim() || null) : true;
+  sheet.value = !ok ? (sheet.input ? null : false) : sheet.input ? $('#sheet-input').value.trim() : true;
   goBack();
 }
 function closeSheet() {
@@ -922,6 +938,16 @@ async function saveTemplate(workout) {
 async function removeExercise(i) {
   if (!await ask({ title: `Remove ${wk().exercises[i].name}?`, message: 'Its sets in this workout will be removed too.', confirm: 'Remove', danger: true })) return;
   wk().exercises.splice(i, 1); save(); render();
+}
+async function editNote(i) {
+  const target = i === null ? wk() : wk().exercises[i];
+  const note = await askText({
+    title: i === null ? 'Workout note' : `${target.name} note`, message: target.note ? 'Clear the text to remove the note.' : '',
+    value: target.note ?? '', placeholder: 'e.g. deload week, shoulder pain', confirm: 'Save',
+  });
+  if (note === null) return;
+  if (note) target.note = note; else delete target.note;
+  save(); render();
 }
 function addSet(i) {
   const sets = wk().exercises[i].sets;

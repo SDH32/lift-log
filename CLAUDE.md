@@ -28,7 +28,8 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
 ## How the app works
 
 - **State** (`localStorage['liftlog.v1']`): `{ unit, theme, exercises[], templates[{name, exercises[]}],
-  active, sessions[{name, start, end, exercises[{name, sets[{weight, reps, done}]}]}] }`.
+  active, sessions[{name, note?, start, end, exercises[{name, note?, sets[{weight, reps, done}]}]}] }`.
+  Notes are optional (absent = none; clearing one deletes the field).
   `load()` back-fills new fields (`??=`) so old data and old backup files keep working — do the
   same for any new field, and in `importData`. A set with no weight is a bodyweight set.
   `sessions` is kept sorted by `start` (the "last time" hints read it in order) — re-sort after
