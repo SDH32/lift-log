@@ -83,7 +83,11 @@ Python at `/usr/bin/python3`).
   render black unless DeviceHub is open. Prefix commands with
   `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` (`xcode-select` points at the
   command-line tools; don't switch it, or `python3` loses Playwright). `simctl openurl` and
-  `simctl io <udid> screenshot` work; `simctl` can't tap.
+  `simctl io <udid> screenshot` work; `simctl` can't tap. To reach a screen without tapping, serve
+  a copy of the app with `python3 -m http.server`, plus a page that seeds localStorage and loads
+  `index.html` in a same-origin iframe, then calls the app's functions (e.g. `editPast(0)`); open
+  it with `simctl openurl` and screenshot. Use this for anything native iOS draws (date pickers,
+  form controls), which desktop WebKit renders differently.
 - Simulated tests can't reproduce native OS behavior (gestures, system animations, the iOS status
   bar). Say clearly what was and wasn't verified, and ask the user to check on their iPhone.
 

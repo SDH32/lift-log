@@ -37,6 +37,10 @@ with app(seed=SEED) as page:
     check('only sets that were done are shown', weights.count() == 2, weights.count())
     check('no done ticks when editing a past workout', page.locator('#view button', has_text='✓').count() == 0)
     page.screenshot(path=SHOTS / 'past-edit.png')
+    # Side by side, same height, no overlap (iOS draws date fields wider unless restyled)
+    db, mb = page.locator('#past-date').bounding_box(), page.locator('#past-min').bounding_box()
+    check('date and minutes fields sit side by side', db['x'] + db['width'] <= mb['x'] and db['height'] == mb['height'] and db['y'] == mb['y'], (db, mb))
+    check('date field drops the native iOS styling', page.locator('#past-date').evaluate("e => getComputedStyle(e).webkitAppearance") == 'none')
 
     weights.nth(1).fill('235'); weights.nth(1).dispatch_event('change')
     page.fill('input[placeholder^="Workout name"]', 'Heavy legs')

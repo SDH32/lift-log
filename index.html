@@ -71,7 +71,11 @@
   button.note-btn { display: block; width: 100%; text-align: left; background: none; padding: 6px 0 2px; font-size: 14px; color: var(--accent); }
   button.note-btn.note { color: var(--text); border-radius: 0; padding: 0 0 0 8px; margin-top: 6px; }
   label.field { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
-  label.field input { margin-top: 4px; min-height: 44px; }
+  label.field input { display: block; margin-top: 4px; height: 44px; text-align: left; }
+  /* iOS draws date fields natively with a built-in minimum width and extra height; without this
+     the date field spills into the field beside it */
+  input[type=date] { -webkit-appearance: none; appearance: none; min-width: 0; }
+  input[type=date]::-webkit-date-and-time-value { text-align: left; }
   table { width: 100%; border-collapse: collapse; font-size: 15px; }
   td, th { padding: 6px 4px; text-align: center; }
   th { color: var(--muted); font-weight: 500; font-size: 12px; }
