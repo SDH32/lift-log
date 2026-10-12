@@ -58,6 +58,10 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
 - Form fields stay at **16px or larger** text (iOS zooms into smaller fields and stays zoomed).
 - Respect `env(safe-area-inset-*)`; header and tabs line up with the 640px content column.
 - Animations must respect `prefers-reduced-motion`.
+- Red is for confirming destructive actions (dialogs, the editors' Delete buttons); per-row/per-card
+  Remove and ✕ use `button.quiet` (grey). Deletes live inside editors, not on list cards.
+- Buttons dim and shrink slightly on press (`:active`; a no-op `touchstart` listener enables it on iOS).
+  Tab icons are inline SVGs drawn with `currentColor` strokes.
 - Text selection and the iOS long-press menu are off app-wide (like a native app) and back on
   for `input`/`textarea`. Focus outlines use `:focus-visible` so taps don't leave them.
 
