@@ -62,6 +62,8 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
   Remove and ✕ use `button.quiet` (grey). Deletes live inside editors, not on list cards.
 - Buttons dim and shrink slightly on press (`:active`; a no-op `touchstart` listener enables it on iOS).
   Tab icons are inline SVGs drawn with `currentColor` strokes.
+- Set lists are shown with `fmtSets()` (runs of the same weight: "225 × 5, 5, 4 · BW × 12"). Numbers
+  use tabular figures. Calendar workout days use `--accent-tint` with `--text` on it (contrast-tested).
 - Text selection and the iOS long-press menu are off app-wide (like a native app) and back on
   for `input`/`textarea`. Focus outlines use `:focus-visible` so taps don't leave them.
 
@@ -96,6 +98,9 @@ Python at `/usr/bin/python3`).
   bar). Say clearly what was and wasn't verified, and ask the user to check on their iPhone.
 
 ## Shipping
+
+- For look-and-feel changes, mock up first: build on a branch, put before/after screenshots
+  (dark and light) in the user's Drive folder, and ship only what they approve.
 
 - Pushing to `main` deploys to GitHub Pages in about a minute. After pushing, confirm the live
   site serves the new version (e.g. `curl` it and grep for a string from the change).

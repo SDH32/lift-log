@@ -473,7 +473,7 @@ function viewExercises() {
       if (est > stats[k].best) { stats[k].best = est; stats[k].bestSet = x; }
     }
   }
-  const names = Object.keys(stats).filter(k => stats[k].sessions).sort((a, b) => stats[b].last - stats[a].last);
+  const names = Object.keys(stats).filter(k => stats[k].sessions).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   if (!names.length) return `<div class="empty">Log some sets to see per-exercise progress.</div>`;
   return `<div class="card list">${names.map(n => {
     const st = stats[n];

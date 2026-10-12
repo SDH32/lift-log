@@ -45,6 +45,15 @@ with app(seed=SEED) as page:
     check('weighted lift shows its best est. 1RM (245×3 → 270)', sq.text_content().strip() == '270 lbest. 1RM', sq.text_content())
     pu = page.locator('.list-row[data-name="Pull-up"] .best')
     check('bodyweight lift shows max reps', pu.text_content().strip() == '12max reps', pu.text_content())
+    # Alphabetical, ignoring case, regardless of when each lift was last done
+    order = page.evaluate('''(() => {
+      state.sessions.push({ name: 'x', start: Date.now() - 1000, end: Date.now(), exercises: [
+        { name: 'bench press', sets: [{ weight: 135, reps: 5, done: true }] },
+        { name: 'Zercher Squat', sets: [{ weight: 135, reps: 5, done: true }] }] });
+      render();
+      return [...document.querySelectorAll('.list-row')].map(r => r.dataset.name);
+    })()''')
+    check('lifts listed alphabetically, ignoring case', order == ['bench press', 'Pull-up', 'Squat', 'Zercher Squat'], order)
     page.locator('.list-row[data-name="Pull-up"]').click()
     page.wait_for_function("document.querySelector('#title').textContent === 'Pull-up'")
     check('row opens the progress chart', page.locator('#chart svg').count() == 1)
