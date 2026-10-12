@@ -28,8 +28,19 @@ def open_edit(page, name):
 with app(seed=SEED) as page:
     page.click('nav button[data-tab=history]')
 
+    card = page.locator('#view .card', has_text='Legs')
+    check('History card has only an Edit button', card.locator('button').all_text_contents() == ['Edit'], card.locator('button').all_text_contents())
+    tabs = page.locator('nav button')
+    check('each tab has an icon and a label', tabs.count() == 4 and page.locator('nav button svg').count() == 4
+          and tabs.all_text_contents() == ['Workout', 'History', 'Exercises', 'Settings'])
+
     # ---- Edit an existing workout
     open_edit(page, 'Legs')
+    check('editor offers Save as template and Delete workout', page.locator('#view button:text-is("Save as template")').count() == 1
+          and page.locator('#view button:text-is("Delete workout")').count() == 1)
+    muted = page.evaluate("getComputedStyle(document.querySelector('.muted')).color")
+    check('Remove and ✕ are grey, not red', all(page.locator(sel).first.evaluate("e => getComputedStyle(e).color") == muted
+          for sel in ['#view button:text-is("Remove")', '#view button:text-is("✕")']))
     check('Edit opens the workout editor', title(page) == 'Edit workout')
     check('editor shows date and minutes', page.input_value('#past-date') == SQUAT_DAY.isoformat() and page.input_value('#past-min') == '45',
           (page.input_value('#past-date'), page.input_value('#past-min')))
@@ -90,6 +101,8 @@ with app(seed=SEED) as page:
         sheet_ok(page); ready(page)
         check('opens Log workout with that date', title(page) == 'Log workout' and page.input_value('#past-date') == rest.isoformat())
         check('templates offered for a new past workout', page.locator('#view button', has_text='Legs').count() == 1)
+        check('no Delete or Save as template when logging a new one', page.locator('#view button:text-is("Delete workout")').count() == 0
+              and page.locator('#view button:text-is("Save as template")').count() == 0)
         page.screenshot(path=SHOTS / 'past-log.png')
         page.click('#view button:text-is("Save")')
         check('saving with no sets is refused', toast(page, 'Add at least one set') and title(page) == 'Log workout')
@@ -122,5 +135,17 @@ with app(seed=SEED) as page:
     d = data(page)
     check('live workout unchanged by past edit', [e['name'] for e in d['active']['exercises']] == ['Bench Press'], d['active'])
     check('past edit added its lift', 'Bench Press' in [e['name'] for e in d['sessions'][0]['exercises']])
+
+    # ---- Save as template and Delete from the editor
+    open_edit(page, 'Heavy legs')
+    page.click('#view button:text-is("Save as template")'); sheet_ok(page, 'Heavy template')
+    check('Save as template works from the editor', toast(page, 'Saved template "Heavy template"')
+          and data(page)['templates'][-1]['name'] == 'Heavy template' and title(page) == 'Edit workout')
+    n = len(data(page)['sessions'])
+    page.click('#view button:text-is("Delete workout")')
+    check('delete asks first', sheet_open(page) and sheet_title(page) == 'Delete this workout?')
+    sheet_ok(page); page.wait_for_function("document.querySelector('#title').textContent === 'History'")
+    check('delete removes it and returns to History', toast(page, 'Workout deleted') and len(data(page)['sessions']) == n - 1
+          and 'Heavy legs' not in titles(page))
 
 finish()

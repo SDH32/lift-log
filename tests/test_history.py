@@ -55,8 +55,9 @@ with app(seed=SEED) as page:
 
     # Delete still removes the right workout when the list is filtered
     page.click('[aria-label="Previous month"]')
-    page.locator('#view .card', has_text='Pull A').get_by_role('button', name='Delete').click()
-    sheet_ok(page)
+    page.locator('#view .card', has_text='Pull A').get_by_role('button', name='Edit').click()
+    page.click('button:text-is("Delete workout")'); sheet_ok(page)
+    page.wait_for_function("document.querySelector('#title').textContent === 'History'")
     names = [s['name'] for s in data(page)['sessions']]
     check('delete removes the workout shown', 'Pull A' not in names and len(names) == 4, names)
     check('list stays on that month after delete', titles(page) == ['Legs A', 'Push A'], titles(page))

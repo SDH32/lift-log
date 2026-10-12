@@ -44,25 +44,29 @@ with app(seed=SEED) as page:
     page.click('nav button[data-tab=exercises]')
     check('returning to tab shows its root', title(page) == 'Exercises')
 
-    # Dialog + back: back closes the dialog as "cancel" and stays put
+    # Dialog + back: back closes the dialog as "cancel" and stays put (Delete lives in the workout editor)
     page.click('nav button[data-tab=history]')
     n = len(data(page)['sessions'])
-    page.locator('button:text-is("Delete")').first.click()
+    page.locator('#view button:text-is("Edit")').first.click()
+    page.wait_for_function("document.querySelector('#title').textContent === 'Edit workout'")
+    DELETE = 'button:text-is("Delete workout")'
+    page.click(DELETE)
     check('delete asks first', sheet_open(page) and sheet_title(page) == 'Delete this workout?')
     check('dialog focuses its button', page.evaluate("document.activeElement.id") == 'sheet-ok')
     check('page behind dialog is inert', page.evaluate("document.querySelector('main').inert"))
     page.screenshot(path=SHOTS / 'dlg-3-delete.png')
     page.go_back(); page.wait_for_selector('#sheet', state='hidden')
-    check('back closes dialog without deleting', len(data(page)['sessions']) == n and title(page) == 'History' and depth(page) == 0)
+    check('back closes dialog without deleting', len(data(page)['sessions']) == n and title(page) == 'Edit workout' and depth(page) == 1)
     check('page usable again after close', not page.evaluate("document.querySelector('main').inert"))
     # Escape and backdrop also cancel
-    page.locator('button:text-is("Delete")').first.click(); page.keyboard.press('Escape'); page.wait_for_selector('#sheet', state='hidden')
-    page.locator('button:text-is("Delete")').first.click(); page.mouse.click(195, 100); page.wait_for_selector('#sheet', state='hidden')
-    check('escape/backdrop cancel', len(data(page)['sessions']) == n)
-    # Double-tapping the confirm button only goes back once
-    page.locator('button:text-is("Delete")').first.click()
+    page.click(DELETE); page.keyboard.press('Escape'); page.wait_for_selector('#sheet', state='hidden')
+    page.click(DELETE); page.mouse.click(195, 100); page.wait_for_selector('#sheet', state='hidden')
+    check('escape/backdrop cancel', len(data(page)['sessions']) == n and title(page) == 'Edit workout')
+    # Double-tapping the confirm button only goes back once: deletes, then leaves the editor
+    page.click(DELETE)
     page.dblclick('#sheet-ok'); page.wait_for_selector('#sheet', state='hidden'); page.wait_for_timeout(300)
-    check('double-tap deletes once, stays on page', len(data(page)['sessions']) == n - 1 and page.url == url and title(page) == 'History')
+    page.wait_for_function("document.querySelector('#title').textContent === 'History'")
+    check('double-tap deletes once, back on History', len(data(page)['sessions']) == n - 1 and page.url == url and depth(page) == 0)
 
     # Editor with unsaved changes + hardware back
     page.click('nav button[data-tab=settings]'); page.click('text=+ New template')
