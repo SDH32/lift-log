@@ -28,8 +28,13 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
 ## How the app works
 
 - **State** (`localStorage['liftlog.v1']`): `{ unit, theme, exercises[], templates[{name, exercises[]}],
-  active, sessions[{name, note?, start, end, exercises[{name, note?, sets[{weight, reps, done}]}]}] }`.
+  active, lastBackup, sessions[{name, note?, start, end, exercises[{name, note?, sets[{weight, reps, done}]}]}] }`.
   Notes are optional (absent = none; clearing one deletes the field).
+  `lastBackup` is set when an export completes (a closed share sheet doesn't count) and is
+  written into the backup file itself; Settings shows it and turns orange (`--warn`) after 30 days.
+- **Device features**: a screen wake lock is held while `state.active` (re-taken when the app
+  returns from the background; `syncWakeLock()` runs on every render), and the app asks for
+  persistent storage at startup. Both are feature-detected and fail silently.
   `load()` back-fills new fields (`??=`) so old data and old backup files keep working — do the
   same for any new field, and in `importData`. A set with no weight is a bodyweight set.
   `sessions` is kept sorted by `start` (the "last time" hints read it in order) — re-sort after

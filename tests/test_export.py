@@ -46,7 +46,9 @@ with sync_playwright() as p:
     shared = page.evaluate("window.__shared")
     check('phone: opens share sheet with one file', len(shared) == 1 and not downloads)
     check('phone: file name uses local date', shared and shared[0]['name'] == f'liftlog-{TODAY}.json', shared and shared[0]['name'])
-    check('phone: file is the full backup', shared and shared[0]['type'] == 'application/json' and json.loads(shared[0]['text']) == dict(SEED, theme='system'))
+    sent = json.loads(shared[0]['text']) if shared else {}
+    check('phone: file is the full backup, stamped with its export time', shared and shared[0]['type'] == 'application/json'
+          and dict(sent, lastBackup=None) == dict(SEED, theme='system', lastBackup=None) and sent['lastBackup'] == stored(page)['lastBackup'])
     # Closing the share sheet: nothing else happens
     page.evaluate("window.__share.result = 'AbortError'")
     page.click('button:text-is("Export")'); page.wait_for_timeout(300)
@@ -68,11 +70,12 @@ with sync_playwright() as p:
     d.value.save_as(path)
     check('computer: downloads (no share sheet)', page.evaluate("window.__shared.length") == 0)
     backup = json.loads(path.read_text())
-    check('computer: download is the full backup (plus appearance setting)', backup == dict(SEED, theme='system'))
+    check('computer: download is the full backup (plus appearance setting)', dict(backup, lastBackup=None) == dict(SEED, theme='system', lastBackup=None)
+          and isinstance(backup['lastBackup'], int))
     page.evaluate("localStorage.setItem('liftlog.v1', JSON.stringify({unit:'kg', sessions:[], active:null, exercises:[], templates:[]}))")
     page.reload(); page.click('nav button[data-tab=settings]')
     page.set_input_files('#import', str(path)); page.wait_for_selector('#sheet.open'); sheet_ok(page)
-    check('round trip: import restores everything', stored(page) == dict(SEED, theme='system') and toast(page, 'Data imported'))
+    check('round trip: import restores everything', stored(page) == backup and toast(page, 'Data imported'))
     page.close()
     b.close()
 finish()

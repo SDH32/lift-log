@@ -20,13 +20,13 @@
     color-scheme: dark;
     --bg: #111418; --card: #1b1f25; --line: #2a3038; --text: #e8eaed; --muted: #8b939e;
     --accent: #4f9cf9; --accent-fill: #2a70d6; --danger: #ec5b60; --danger-fill: #d93036;
-    --ok: #3fb950; --series-1: #3987e5; --accent-tint: #24416a;
+    --ok: #3fb950; --series-1: #3987e5; --accent-tint: #24416a; --warn: #d29922;
   }
   :root[data-theme="light"] {
     color-scheme: light;
     --bg: #f2f3f5; --card: #ffffff; --line: #d5dae0; --text: #14171c; --muted: #5f6873;
     --accent: #1a66cc; --accent-fill: #1a66cc; --danger: #c62a30; --danger-fill: #c62a30;
-    --ok: #1a7f37; --series-1: #2a78d6; --accent-tint: #d0e1f8;
+    --ok: #1a7f37; --series-1: #2a78d6; --accent-tint: #d0e1f8; --warn: #9a5b00;
   }
   * { box-sizing: border-box; }
   /* Like a native app: long-press or drag doesn't select text or pop up the iOS menu, except in
@@ -51,6 +51,7 @@
   main { padding: 0 12px; max-width: 640px; margin: 0 auto; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
   .muted { color: var(--muted); font-size: 13px; }
+  .warn { color: var(--warn); }
   .row { display: flex; gap: 8px; align-items: center; }
   .spread { justify-content: space-between; }
   button {
@@ -246,6 +247,7 @@ function load() {
   s ??= { unit: 'lb', sessions: [], active: null, exercises: DEFAULT_EXERCISES.slice() };
   s.templates ??= [];
   s.theme ??= 'system';
+  s.lastBackup ??= null;
   return s;
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -317,6 +319,7 @@ function render(anim) {
   }
   if (sub === 'detail') drawChart();
   tickTimer();
+  syncWakeLock();
 }
 
 function viewWorkout() {
@@ -653,13 +656,24 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Backup</h2>
-      <p class="muted">Data lives only in this browser. Export regularly so you don't lose it.</p>
+      <p class="muted">Data lives only on this phone. Export regularly so you don't lose it.</p>
+      ${backupStatus()}
       <div class="row">
         <button class="block" onclick="exportData()">Export</button>
         <button class="block" onclick="$('#import').click()">Import</button>
       </div>
       <input type="file" id="import" accept="application/json" style="display:none" onchange="importData(this)">
     </div>`;
+}
+
+// Settings' backup line: turns orange once there's something to lose and it's been a month
+const BACKUP_WARN_DAYS = 30;
+function backupStatus() {
+  const t = state.lastBackup;
+  if (!t) return state.sessions.length ? '<p class="warn">Not backed up yet.</p>' : '';
+  const days = Math.floor((dateFromKey(dayKey(Date.now())) - dateFromKey(dayKey(t))) / 86400000);
+  const ago = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+  return `<p class="${days >= BACKUP_WARN_DAYS ? 'warn' : 'muted'}">Last backup: ${ago}.</p>`;
 }
 
 // ---------- Past workout editor ----------
@@ -1009,14 +1023,16 @@ async function pastDelete() {
   save(); leaveEditor(); toast('Workout deleted');
 }
 async function exportData() {
-  const name = `liftlog-${dayKey(Date.now())}.json`;
-  const file = new File([JSON.stringify(state, null, 2)], name, { type: 'application/json' });
+  const when = Date.now();
+  const name = `liftlog-${dayKey(when)}.json`;
+  const file = new File([JSON.stringify({ ...state, lastBackup: when }, null, 2)], name, { type: 'application/json' });
+  const done = () => { state.lastBackup = when; save(); render(); };
   // On phones, hand the file to the share sheet (Save to Files, Drive, AirDrop...) rather than
   // downloading it, which iOS shows as a full-screen preview that replaces the app
   if (matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      return;
+      return done();
     } catch (e) {
       if (e.name === 'AbortError') return;  // closed the share sheet
     }
@@ -1026,6 +1042,7 @@ async function exportData() {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  done();
 }
 async function importData(input) {
   const file = input.files[0];
@@ -1041,6 +1058,7 @@ async function importData(input) {
   if (!await ask({ title: 'Replace all data?', message: `Everything in the app will be replaced with the ${data.sessions.length} workouts in this file.`, confirm: 'Replace', danger: true })) return;
   data.templates ??= [];
   data.theme ??= 'system';
+  data.lastBackup ??= null;  // a backup file carries its own export time
   state = data; detail = null; tplDraft = null; pastDraft = null; save(); applyTheme(state.theme); render();
   toast('Data imported');
 }
@@ -1053,6 +1071,30 @@ function tickTimer() {
   $('#timer').textContent = state.active ? `⏱ ${fmtDur(Date.now() - state.active.start)}` : '';
 }
 setInterval(tickTimer, 30000);
+
+// Keep the screen on while a workout is in progress, so the phone doesn't lock between sets.
+// The phone drops the lock whenever the app is hidden, so it's taken again on return.
+let wakeLock = null, wakePending = false;
+async function syncWakeLock() {
+  if (!('wakeLock' in navigator) || wakePending) return;
+  const want = !!state.active && document.visibilityState === 'visible';
+  if (want && !wakeLock) {
+    wakePending = true;
+    try {
+      const l = await navigator.wakeLock.request('screen');
+      l.addEventListener('release', () => { if (wakeLock === l) wakeLock = null; });
+      wakeLock = l;
+      wakePending = false;
+      syncWakeLock();  // the workout may have finished while waiting
+    } catch { wakePending = false; }  // e.g. low power mode: just carry on without it (retried on next render)
+  } else if (!want && wakeLock) {
+    const l = wakeLock; wakeLock = null; l.release().catch(() => {});
+  }
+}
+document.addEventListener('visibilitychange', syncWakeLock);
+
+// Ask the browser to treat this app's data as important, so it isn't cleared to free up space
+navigator.storage?.persist?.().catch(() => {});
 
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 document.addEventListener('touchstart', () => {}, { passive: true });  // lets iOS show :active press states
