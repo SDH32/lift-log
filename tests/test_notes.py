@@ -56,12 +56,13 @@ with app(seed=SEED) as page:
     card = page.locator('#view .card', has_text='Deload week')
     check('History shows both notes', card.locator('.note').all_text_contents() == ['Deload week', 'Shoulder pain, went light'],
           card.locator('.note').all_text_contents())
-    check('lift without a note still lists its sets on their own line',
-          page.locator('#view .card:not(:has(.note))').filter(has_text='Squat').first.locator('b + br').count() == 1)
+    rows = page.locator('#view .card:not(:has(.note)) .lift').first
+    check('lift without a note shows name and a set summary', rows.locator('b').text_content() == 'Squat' and rows.locator('.sets').text_content() == '235 × 5',
+          rows.text_content())
     page.screenshot(path=SHOTS / 'notes-history.png')
 
     # ---- Added later through Edit (the dip on the 2nd session)
-    page.locator('#view .card', has_text='185×5').get_by_role('button', name='Edit').click(); ready(page)
+    page.locator('#view .card', has_text='185 × 5').get_by_role('button', name='Edit').click(); ready(page)
     write_note(page, page.locator('#view .card', has_text='Squat').locator('button.note-btn'), 'Deloaded')
     page.go_back()
     check('unsaved note counts as a change', sheet_open(page) and sheet_title(page) == 'Discard changes?')

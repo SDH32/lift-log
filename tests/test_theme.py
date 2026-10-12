@@ -19,7 +19,7 @@ CONTRAST = """() => {
   const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
   const pairs = [['--text', '--bg', 4.5], ['--text', '--card', 4.5], ['--muted', '--bg', 4.5], ['--muted', '--card', 4.5],
     ['--accent', '--bg', 4.5], ['--accent', '--card', 4.5], ['#ffffff', '--accent-fill', 4.5], ['#ffffff', '--danger-fill', 4.5],
-    ['--danger', '--card', 4.5], ['--ok', '--card', 4.5], ['--series-1', '--card', 3]];
+    ['--danger', '--card', 4.5], ['--ok', '--card', 4.5], ['--series-1', '--card', 3], ['--text', '--accent-tint', 4.5]];
   const col = (n) => n.startsWith('#') ? n : v(n);
   return pairs.map(([f, b, need]) => [f + ' on ' + b, +ratio(col(f), col(b)).toFixed(2), need]).filter(([, r, need]) => r < need);
 }"""

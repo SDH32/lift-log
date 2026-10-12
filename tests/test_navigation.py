@@ -20,7 +20,7 @@ with app(seed=SEED) as page:
     check('root tab has no back button', page.is_hidden('#back') and title(page) == 'Exercises')
     page.evaluate('scrollTo(0, document.documentElement.scrollHeight)'); page.wait_for_timeout(200)  # (WebKit's simulated wheel reports unclamped positions)
     y_before = page.evaluate('scrollY')
-    page.locator('.card:has(h2:text-is("Lat Pulldown"))').click()
+    page.locator('.list-row[data-name="Lat Pulldown"]').click()
     check('detail: title + back label', title(page) == 'Lat Pulldown' and page.text_content('#back') == '‹ Exercises')
     check('detail slides in', 'anim-push' in view_anim(page))
     check('detail scrolled to top', page.evaluate('scrollY') == 0)
@@ -32,12 +32,12 @@ with app(seed=SEED) as page:
     check('history back at root', depth(page) == 0 and page.url == url)
 
     # Header back button does the same
-    page.locator('.card:has(h2:text-is("Squat"))').click(); page.click('#back')
+    page.locator('.list-row[data-name="Squat"]').click(); page.click('#back')
     page.wait_for_function("document.querySelector('#title').textContent === 'Exercises'")
     check('header back works', depth(page) == 0)
 
     # Switching tabs from a sub-screen unwinds history (no dead back presses later)
-    page.locator('.card:has(h2:text-is("Squat"))').click()
+    page.locator('.list-row[data-name="Squat"]').click()
     page.click('nav button[data-tab=settings]')
     page.wait_for_function("document.querySelector('#title').textContent === 'Settings'")
     check('tab switch from sub-screen clears history', depth(page) == 0)

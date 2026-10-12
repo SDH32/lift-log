@@ -20,13 +20,13 @@
     color-scheme: dark;
     --bg: #111418; --card: #1b1f25; --line: #2a3038; --text: #e8eaed; --muted: #8b939e;
     --accent: #4f9cf9; --accent-fill: #2a70d6; --danger: #ec5b60; --danger-fill: #d93036;
-    --ok: #3fb950; --series-1: #3987e5;
+    --ok: #3fb950; --series-1: #3987e5; --accent-tint: #24416a;
   }
   :root[data-theme="light"] {
     color-scheme: light;
     --bg: #f2f3f5; --card: #ffffff; --line: #d5dae0; --text: #14171c; --muted: #5f6873;
     --accent: #1a66cc; --accent-fill: #1a66cc; --danger: #c62a30; --danger-fill: #c62a30;
-    --ok: #1a7f37; --series-1: #2a78d6;
+    --ok: #1a7f37; --series-1: #2a78d6; --accent-tint: #d0e1f8;
   }
   * { box-sizing: border-box; }
   /* Like a native app: long-press or drag doesn't select text or pop up the iOS menu, except in
@@ -34,7 +34,7 @@
   html { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   body {
-    margin: 0; font-family: -apple-system, system-ui, sans-serif;
+    margin: 0; font-family: -apple-system, system-ui, sans-serif; font-variant-numeric: tabular-nums;
     background: var(--bg); color: var(--text);
     padding: 0 0 calc(70px + env(safe-area-inset-bottom));
   }
@@ -46,7 +46,7 @@
     padding-right: max(calc(env(safe-area-inset-right) + 16px), calc((100% - 640px) / 2 + 16px));
   }
   header .back { background: none; color: var(--accent); padding: 4px 0; margin-bottom: 2px; font-size: 16px; }
-  h1 { font-size: 22px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   h2 { font-size: 17px; margin: 0 0 8px; }
   main { padding: 0 12px; max-width: 640px; margin: 0 auto; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
@@ -72,6 +72,18 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 100%;
   }
   input[type=number] { text-align: center; }
+  /* Exercises tab: one card, a row per lift */
+  .card.list { padding: 0 12px; }
+  .list-row {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; width: 100%;
+    background: none; border-radius: 0; padding: 12px 0; text-align: left; border-top: 1px solid var(--line);
+  }
+  .list-row:first-child { border-top: 0; }
+  .list-row:active:not(:disabled) { transform: none; }
+  .list-row .best { display: flex; flex-direction: column; align-items: flex-end; }
+  .list-row .best b { font-size: 17px; }
+  .lift { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; margin-top: 8px; }
+  .lift .sets { color: var(--muted); font-size: 15px; }
   .note { border-left: 2px solid var(--line); padding-left: 8px; margin-top: 4px; font-size: 14px; overflow-wrap: anywhere; }
   button.note-btn { display: block; width: 100%; text-align: left; background: none; padding: 6px 0 2px; font-size: 14px; color: var(--accent); }
   button.note-btn.note { color: var(--text); border-radius: 0; padding: 0 0 0 8px; margin-top: 6px; }
@@ -85,6 +97,8 @@
   td, th { padding: 6px 4px; text-align: center; }
   th { color: var(--muted); font-weight: 500; font-size: 12px; }
   tr.done td { color: var(--ok); }
+  /* A ticked set reads as logged: its fields drop the box (still tappable to fix a typo) */
+  tr.done input { background: transparent; border-color: transparent; font-weight: 600; }
   nav {
     position: fixed; bottom: 0; left: 0; right: 0; display: flex;
     background: var(--card); border-top: 1px solid var(--line);
@@ -101,7 +115,6 @@
   nav svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   nav button.active { color: var(--accent); font-weight: 600; }
   .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
-  .pill { display: inline-block; background: var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; margin: 2px; }
   .tappable { cursor: pointer; }
   .seg { display: flex; gap: 4px; margin: 10px 0; }
   .seg button { flex: 1; padding: 8px; font-size: 14px; background: var(--bg); color: var(--muted); }
@@ -122,7 +135,7 @@
   .cal .dow { color: var(--muted); font-size: 12px; padding: 4px 0; }
   .cal .day { padding: 0; aspect-ratio: 1; max-height: 44px; width: 100%; border-radius: 50%; background: none; color: var(--muted); font-size: 14px; }
   .cal .day:disabled { cursor: default; }
-  .cal .day.has { background: var(--accent-fill); color: #fff; font-weight: 600; }
+  .cal .day.has { background: var(--accent-tint); color: var(--text); font-weight: 700; }
   .cal .day.today { box-shadow: inset 0 0 0 2px var(--text); }
   .cal .day.sel { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
   .tpl-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
@@ -243,6 +256,15 @@ const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { weekday: 's
 const fmtDur = (ms) => { const m = Math.round(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
 const dayKey = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtSet = (s) => s.weight ? `${s.weight}×${s.reps}` : `${s.reps} reps`;
+// Sets in a row at the same weight share it: "225 × 5, 5, 4 · 245 × 3"; bodyweight: "BW × 12, 10"
+function fmtSets(sets) {
+  const runs = [];
+  for (const s of sets) {
+    const w = s.weight || 'BW';
+    if (runs.at(-1)?.w === w) runs.at(-1).reps.push(s.reps); else runs.push({ w, reps: [s.reps] });
+  }
+  return runs.map(r => `${r.w} × ${r.reps.join(', ')}`).join(' · ');
+}
 const volume = (ex) => ex.sets.filter(s => s.done).reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0);
 // Epley estimate
 const e1rm = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
@@ -337,7 +359,7 @@ function viewWorkout() {
 function exerciseCard(ex, i) {
   const past = !!pastDraft;  // past workouts: every set entered counts, so no done ticks
   const last = past ? lastPerformance(ex.name, pastStart(), pastDraft.idx ?? -1) : lastPerformance(ex.name);
-  const lastTxt = last ? `Last (${fmtDate(last.date)}): ${last.sets.map(fmtSet).join(', ')}` : 'First time logging this';
+  const lastTxt = last ? `Last (${fmtDate(last.date)}): ${fmtSets(last.sets)}` : 'First time logging this';
   return `<div class="card">
     <div class="row spread">
       <h2>${esc(ex.name)}</h2>
@@ -383,9 +405,10 @@ function viewHistory() {
       </div>
       <div class="muted">${fmtDate(s.start)} · ${fmtDur(s.end - s.start)} · ${vol.toLocaleString()} ${state.unit} volume</div>
       ${noteLine(s.note)}
-      ${s.exercises.map(e => `<div style="margin-top:8px"><b>${esc(e.name)}</b>${noteLine(e.note) || '<br>'}
-        ${e.sets.filter(x => x.done).map(x => `<span class="pill">${fmtSet(x)}</span>`).join('') || '<span class="muted">no sets</span>'}
-      </div>`).join('')}
+      ${s.exercises.map(e => {
+        const done = e.sets.filter(x => x.done);
+        return `<div class="lift"><b>${esc(e.name)}</b><span class="sets">${done.length ? fmtSets(done) : 'no sets'}</span></div>${noteLine(e.note)}`;
+      }).join('')}
     </div>`;
   }).join('');
 }
@@ -452,18 +475,16 @@ function viewExercises() {
   }
   const names = Object.keys(stats).filter(k => stats[k].sessions).sort((a, b) => stats[b].last - stats[a].last);
   if (!names.length) return `<div class="empty">Log some sets to see per-exercise progress.</div>`;
-  return names.map(n => {
+  return `<div class="card list">${names.map(n => {
     const st = stats[n];
-    const best = [
-      st.bestSet && `Best: ${fmtSet(st.bestSet)} · est. 1RM <b>${st.best} ${state.unit}</b>`,
-      st.bestReps && `${st.bestSet ? 'Bodyweight' : 'Best'}: <b>${st.bestReps} reps</b>`,
-    ].filter(Boolean).join('<br>');
-    return `<div class="card tappable" onclick="openDetail(this.dataset.name)" data-name="${esc(n)}">
-      <div class="row spread"><h2>${esc(n)}</h2><span class="muted">Progress ›</span></div>
-      <div class="muted">${st.sessions} session${st.sessions > 1 ? 's' : ''} · last ${fmtDate(st.last)}</div>
-      <div style="margin-top:6px">${best}</div>
-    </div>`;
-  }).join('');
+    const [val, label] = st.bestSet ? [`${st.best} ${state.unit}`, 'est. 1RM'] : [`${st.bestReps}`, 'max reps'];
+    return `<button class="list-row" onclick="openDetail(this.dataset.name)" data-name="${esc(n)}">
+      <span style="min-width:0"><b class="ellipsis" style="display:block">${esc(n)}</b>
+        <span class="muted">${st.sessions} session${st.sessions > 1 ? 's' : ''} · last ${fmtDate(st.last)}</span></span>
+      <span class="best"><b>${val}</b><span class="muted">${label}</span></span>
+      <span class="muted" aria-hidden="true">›</span>
+    </button>`;
+  }).join('')}</div>`;
 }
 
 // ---------- Progress chart ----------
@@ -513,7 +534,7 @@ function viewExerciseDetail() {
       <button class="small" style="margin-top:10px" onclick="showTable=!showTable;render()">${showTable ? 'Hide' : 'Show'} table</button>
       ${showTable ? `<table class="data-table" style="margin-top:8px">
         <tr><th>Date</th><th>Sets</th><th>${m.label}</th></tr>
-        ${pts.slice().reverse().map(p => `<tr><td>${fmtDate(p.date)}</td><td>${p.sets.map(fmtSet).join(', ')}${p.notes.map(n => `<div class="muted">${esc(n)}</div>`).join('')}</td><td>${p.v.toLocaleString()}</td></tr>`).join('')}
+        ${pts.slice().reverse().map(p => `<tr><td>${fmtDate(p.date)}</td><td>${fmtSets(p.sets)}${p.notes.map(n => `<div class="muted">${esc(n)}</div>`).join('')}</td><td>${p.v.toLocaleString()}</td></tr>`).join('')}
       </table>` : ''}
     </div>`;
 }
@@ -574,7 +595,7 @@ function drawChart() {
     const key = document.createElement('span'); key.className = 'key';
     val.append(key, `${METRICS[metric].label}: ${p.v.toLocaleString()} ${metricUnit(metric)}`);
     const sets = document.createElement('div');
-    sets.className = 'muted'; sets.textContent = p.sets.map(fmtSet).join(', ');
+    sets.className = 'muted'; sets.textContent = fmtSets(p.sets);
     tip.append(head, val, sets);
     for (const n of p.notes) { const el = document.createElement('div'); el.className = 'tip-note'; el.textContent = n; tip.append(el); }
     tip.style.display = 'block';
