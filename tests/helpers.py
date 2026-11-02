@@ -22,13 +22,14 @@ def check(label, cond, extra=''):
 
 
 @contextmanager
-def app(fresh=True, seed=None, ios=False):
+def app(fresh=True, seed=None, ios=False, now=None):
     with sync_playwright() as p:
         b = launch(p)
         ua = {'user_agent': IPHONE_UA} if ios else {}
         page = b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2, has_touch=True, **ua)
         page.on('pageerror', lambda e: ERRORS.append(str(e)))
         page.on('dialog', lambda d: (ERRORS.append(f'native {d.type}: {d.message}'), d.dismiss()))
+        if now is not None: page.clock.install(time=now)  # the app sees this date; time still runs
         page.goto(URL)
         if fresh: page.evaluate("localStorage.clear()")
         if seed is not None: page.evaluate("s => localStorage.setItem('liftlog.v1', JSON.stringify(s))", seed)

@@ -27,9 +27,15 @@ phone's home screen. Live at https://sdh32.github.io/lift-log/ (GitHub Pages fro
 
 ## How the app works
 
-- **State** (`localStorage['liftlog.v1']`): `{ unit, theme, exercises[], templates[{name, exercises[]}],
+- **State** (`localStorage['liftlog.v1']`): `{ unit, theme, templates[{name, exercises[]}],
   active, lastBackup, sessions[{name, note?, start, end, exercises[{name, note?, sets[{weight, reps, done}]}]}] }`.
-  Notes are optional (absent = none; clearing one deletes the field).
+  Notes are optional (absent = none; clearing one deletes the field). There is no stored list of
+  exercise names: "Add exercise" suggestions come from `exerciseNames()` (every lift in a workout
+  or template, A–Z; a starter list before anything is logged). Old data's `exercises` field is dropped.
+- **Lift names**: lifts match by name, ignoring case. `renameLift()` (Rename on a lift's chart)
+  renames everywhere; renaming to another lift's name merges them (one entry per workout, sets and
+  notes combined). Finishing a workout toasts any `newBests()` (est. 1RM / max reps beating every
+  earlier workout; a lift's first workout doesn't count).
   `lastBackup` is set when an export completes (a closed share sheet doesn't count) and is
   written into the backup file itself; Settings shows it and turns orange (`--warn`) after 30 days.
 - **Device features**: a screen wake lock is held while `state.active` (re-taken when the app
@@ -83,7 +89,8 @@ Python at `/usr/bin/python3`).
   `set_offline` crashes with a service worker (`test_install.py` stops its server instead).
   WebKit's simulated wheel reports unclamped scroll positions.
 - History lists only the calendar's month (or a tapped day), so seed test workouts relative to
-  today's month — fixed "last N days" dates break early in a month.
+  today's month — fixed "last N days" dates break early in a month. If a test needs earlier days in
+  the month, pin the app's date with `app(now=datetime)` (Playwright's clock) rather than skipping.
 - When fixing a bug, first show the test fails on the old version (`git show HEAD:index.html`),
   then passes on the new one. Look at screenshots after layout changes, not just pass counts.
 - **Android emulator** (headless Pixel 8, Android 16): `sh tests/android/start_emulator.sh`, then

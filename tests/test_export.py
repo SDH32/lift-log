@@ -9,6 +9,7 @@ TODAY = datetime.date.today().isoformat()  # local date, like the app's file nam
 SEED = {'unit': 'lb', 'active': None, 'exercises': ['Squat'], 'templates': [{'name': 'Legs', 'exercises': ['Squat']}],
         'sessions': [{'name': 'Legs', 'start': 1.7e12, 'end': 1.7e12 + 3600000,
                       'exercises': [{'name': 'Squat', 'sets': [{'weight': 225, 'reps': 5, 'done': True}]}]}]}
+BACKUP = {**{k: v for k, v in SEED.items() if k != 'exercises'}, 'theme': 'system'}  # old saved name list is dropped
 # Stand-in share sheet: records what the app hands it; behaviour set per test via window.__share
 FAKE_SHARE = """
 window.__shared = []; window.__share = { can: true, result: 'ok' };
@@ -48,7 +49,7 @@ with sync_playwright() as p:
     check('phone: file name uses local date', shared and shared[0]['name'] == f'liftlog-{TODAY}.json', shared and shared[0]['name'])
     sent = json.loads(shared[0]['text']) if shared else {}
     check('phone: file is the full backup, stamped with its export time', shared and shared[0]['type'] == 'application/json'
-          and dict(sent, lastBackup=None) == dict(SEED, theme='system', lastBackup=None) and sent['lastBackup'] == stored(page)['lastBackup'])
+          and dict(sent, lastBackup=None) == dict(BACKUP, lastBackup=None) and sent['lastBackup'] == stored(page)['lastBackup'])
     # Closing the share sheet: nothing else happens
     page.evaluate("window.__share.result = 'AbortError'")
     page.click('button:text-is("Export")'); page.wait_for_timeout(300)
@@ -70,7 +71,7 @@ with sync_playwright() as p:
     d.value.save_as(path)
     check('computer: downloads (no share sheet)', page.evaluate("window.__shared.length") == 0)
     backup = json.loads(path.read_text())
-    check('computer: download is the full backup (plus appearance setting)', dict(backup, lastBackup=None) == dict(SEED, theme='system', lastBackup=None)
+    check('computer: download is the full backup (plus appearance setting)', dict(backup, lastBackup=None) == dict(BACKUP, lastBackup=None)
           and isinstance(backup['lastBackup'], int))
     page.evaluate("localStorage.setItem('liftlog.v1', JSON.stringify({unit:'kg', sessions:[], active:null, exercises:[], templates:[]}))")
     page.reload(); page.click('nav button[data-tab=settings]')

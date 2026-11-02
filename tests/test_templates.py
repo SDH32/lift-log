@@ -25,7 +25,7 @@ with app() as page:
     check('back on Settings after save', title(page) == 'Settings')
     s = data(page)
     check('template saved in order', s['templates'] == [{'name': 'Push Day', 'exercises': ['Bench Press', 'Cable Fly', 'Overhead Press']}])
-    check('new exercise added to autocomplete list', 'Cable Fly' in s['exercises'])
+    check('new exercise added to autocomplete list', 'Cable Fly' in page.evaluate("[...document.querySelectorAll('#exercise-list option')].map(o => o.value)"))
 
     # Save a manually entered workout as a template
     page.click('nav button[data-tab=workout]'); page.click('text=Start empty workout')

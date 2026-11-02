@@ -3,7 +3,10 @@ Run: python3 tests/test_past.py (needs Playwright)."""
 import datetime
 from helpers import app, check, data, finish, sheet_ok, sheet_cancel, sheet_open, sheet_title, title, toast, SHOTS
 
-today = datetime.date.today()
+# Some checks need a few earlier days in the month, so on the 1st and 2nd the app runs on the 15th
+real = datetime.date.today()
+today = real if real.day >= 3 else real.replace(day=15)
+NOW = datetime.datetime.combine(today, datetime.time(12)) if today != real else None
 month1 = today.replace(day=1)
 H = 3600000
 
@@ -25,7 +28,7 @@ def open_edit(page, name):
     page.locator('#view .card', has_text=name).get_by_role('button', name='Edit').click(); ready(page)
 
 
-with app(seed=SEED) as page:
+with app(seed=SEED, now=NOW) as page:
     page.click('nav button[data-tab=history]')
 
     card = page.locator('#view .card', has_text='Legs')
@@ -119,7 +122,7 @@ with app(seed=SEED) as page:
         check('logged workout saved with all sets done', len(ss) == 2 and all(x['done'] for e in added['exercises'] for x in e['sets'])
               and [e['name'] for e in added['exercises']] == ['Squat', 'Pull-up'], added)
         check('logged workout lands on that day, before now', datetime.date.fromtimestamp(added['start'] / 1000) == rest
-              and added['end'] - added['start'] == 30 * 60000 and added['end'] <= datetime.datetime.now().timestamp() * 1000 + 1000)
+              and added['end'] - added['start'] == 30 * 60000 and added['end'] <= page.evaluate('Date.now()') + 1000)
         check('sessions kept in date order', [x['start'] for x in ss] == sorted(x['start'] for x in ss))
         check('calendar shows the new day', page.locator(f'.cal .day.has >> text="{rest.day}"').count() == 1)
         page.screenshot(path=SHOTS / 'past-after.png')

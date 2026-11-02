@@ -172,7 +172,9 @@
     transform: translateY(16px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
     background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px;
     font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); text-align: center;
+    white-space: pre-line;  /* "\n" starts a new line (new-best list) */
   }
+  .toast.multi { border-radius: 16px; line-height: 1.5; }
   .toast.show { opacity: 1; transform: none; }
   @media (prefers-reduced-motion: reduce) {
     #view, .sheet, .backdrop, .toast { animation: none !important; transition: none !important; }
@@ -244,7 +246,8 @@ let pastDraft = null;     // past workout being added/edited from History
 function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch {}
-  s ??= { unit: 'lb', sessions: [], active: null, exercises: DEFAULT_EXERCISES.slice() };
+  s ??= { unit: 'lb', sessions: [], active: null };
+  delete s.exercises;  // old saved list of names; suggestions now come from what's logged
   s.templates ??= [];
   s.theme ??= 'system';
   s.lastBackup ??= null;
@@ -281,6 +284,32 @@ function lastPerformance(name, before = Infinity, skip = -1) {
   }
   return null;
 }
+// "Add exercise" suggestions: every lift in a workout or template (so typos and unused names drop
+// off on their own), or a starter list before anything is logged. A–Z, one per name ignoring case.
+function exerciseNames() {
+  const seen = new Map();
+  const add = (n) => { if (n && !seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n); };
+  for (const w of [...state.sessions, state.active, pastDraft]) for (const e of w?.exercises ?? []) add(e.name);
+  for (const t of [...state.templates, tplDraft]) for (const n of t?.exercises ?? []) add(n);
+  const names = seen.size ? [...seen.values()] : DEFAULT_EXERCISES;
+  return names.slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+// Lifts in this workout that beat every earlier workout: est. 1RM for weighted sets, reps for
+// bodyweight. A lift's first workout doesn't count (nothing to beat yet).
+function newBests(w) {
+  const out = [];
+  for (const e of w.exercises) {
+    const done = e.sets.filter(x => x.done && x.reps);
+    for (const key of ['e1rm', 'maxReps']) {
+      const sets = done.filter(x => !!x.weight === METRICS[key].weighted);
+      if (!sets.length) continue;
+      const before = exercisePoints(e.name, key).filter(p => p.date < w.start);
+      const v = METRICS[key].get(sets);
+      if (before.length && v > Math.max(...before.map(p => p.v))) out.push(`${e.name}: ${v} ${metricUnit(key)}${key === 'e1rm' ? ' est. 1RM' : ''}`);
+    }
+  }
+  return out;
+}
 // The workout the exercise cards edit: a past one being edited, otherwise the live one
 const wk = () => pastDraft ?? state.active;
 // i = exercise index, or null for the workout's own note
@@ -296,7 +325,7 @@ const TAB_TITLES = { workout: 'Workout', history: 'History', exercises: 'Exercis
 function render(anim) {
   const sub = tplDraft ? 'editor' : pastDraft ? 'past' : (tab === 'exercises' && detail) ? 'detail' : null;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  $('#exercise-list').innerHTML = state.exercises.map(e => `<option value="${esc(e)}">`).join('');
+  $('#exercise-list').innerHTML = exerciseNames().map(e => `<option value="${esc(e)}">`).join('');
 
   const head = sub === 'editor' ? { title: tplDraft.idx === null ? 'New template' : 'Edit template', back: TAB_TITLES[tab] }
     : sub === 'past' ? { title: pastDraft.idx === null ? 'Log workout' : 'Edit workout', back: 'History' }
@@ -514,6 +543,34 @@ function exercisePoints(name, key = metric) {
 }
 const availableMetrics = (name) => Object.keys(METRICS).filter(k => exercisePoints(name, k).length);
 
+// Renames a lift everywhere: past workouts, the live workout, templates. Renaming to another lift's
+// name merges the two (a workout that has both keeps one entry with all the sets).
+async function renameLift() {
+  const from = detail;
+  const to = await askText({ title: `Rename ${from}`, message: 'Changes it in every workout and template. Use another lift\'s name to merge the two.',
+    value: from, placeholder: 'Lift name', confirm: 'Rename' });
+  if (!to || to === from) return;
+  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+  const target = same(to, from) ? null : exerciseNames().find(n => same(n, to));
+  const name = target ?? to;
+  if (target && !await ask({ title: `Merge into ${target}?`, message: `${from} and ${target} become one lift, with one history and chart. This can't be undone.`, confirm: 'Merge' })) return;
+  const fix = (exercises) => {
+    const out = [];
+    for (const e of exercises) {
+      const n = same(e.name, from) || same(e.name, name) ? name : e.name;
+      const prev = out.find(x => x.name === n);
+      if (!prev) { out.push({ ...e, name: n }); continue; }
+      prev.sets = [...prev.sets, ...e.sets];
+      const notes = [prev.note, e.note].filter(Boolean);
+      if (notes.length) prev.note = notes.join('; ');
+    }
+    return out;
+  };
+  for (const w of [...state.sessions, state.active].filter(Boolean)) w.exercises = fix(w.exercises);
+  for (const t of state.templates) t.exercises = [...new Set(t.exercises.map(n => same(n, from) || same(n, name) ? name : n))];
+  detail = name;
+  save(); render(); toast(target ? `Merged into ${name}` : `Renamed to ${name}`);
+}
 function openDetail(name) { detail = name; showTable = false; pushLayer('detail'); render('push'); window.scrollTo(0, 0); }
 
 function viewExerciseDetail() {
@@ -534,7 +591,10 @@ function viewExerciseDetail() {
       </div>` : '<div style="height:10px"></div>'}
       <div class="muted" style="margin-bottom:4px">${m.label}${m.weighted ? ` (${unit})` : ''} per session</div>
       <div class="chart" id="chart"></div>
-      <button class="small" style="margin-top:10px" onclick="showTable=!showTable;render()">${showTable ? 'Hide' : 'Show'} table</button>
+      <div class="row spread" style="margin-top:10px">
+        <button class="small" onclick="showTable=!showTable;render()">${showTable ? 'Hide' : 'Show'} table</button>
+        <button class="small" onclick="renameLift()">Rename</button>
+      </div>
       ${showTable ? `<table class="data-table" style="margin-top:8px">
         <tr><th>Date</th><th>Sets</th><th>${m.label}</th></tr>
         ${pts.slice().reverse().map(p => `<tr><td>${fmtDate(p.date)}</td><td>${fmtSets(p.sets)}${p.notes.map(n => `<div class="muted">${esc(n)}</div>`).join('')}</td><td>${p.v.toLocaleString()}</td></tr>`).join('')}
@@ -814,9 +874,6 @@ function tplSave() {
   if (!d.exercises.length) return toast('Add at least one exercise.');
   const clash = state.templates.findIndex((t, i) => i !== d.idx && t.name.toLowerCase() === name.toLowerCase());
   if (clash >= 0) return toast(`There's already a template called "${state.templates[clash].name}".`);
-  for (const ex of d.exercises) {
-    if (!state.exercises.some(e => e.toLowerCase() === ex.toLowerCase())) state.exercises.push(ex);
-  }
   const t = { name, exercises: d.exercises };
   if (d.idx === null) state.templates.push(t); else state.templates[d.idx] = t;
   save(); leaveEditor(); toast(`Saved "${name}"`);
@@ -933,12 +990,13 @@ function closeSheet() {
 }
 document.addEventListener('keydown', (e) => { if (sheet && e.key === 'Escape') sheetDone(false); });
 
-function toast(msg) {
+function toast(msg, ms = 2500) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.toggle('multi', msg.includes('\n'));
   t.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
+  toast.timer = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 // ---------- Actions ----------
@@ -958,7 +1016,6 @@ function startWorkout(templateIdx) {
 function addExercise() {
   const name = $('#new-ex').value.trim();
   if (!name) return;
-  if (!state.exercises.some(e => e.toLowerCase() === name.toLowerCase())) state.exercises.push(name);
   wk().exercises.push(newExercise(name));
   save(); render();
   $('#new-ex').focus();
@@ -1009,8 +1066,11 @@ async function finishWorkout() {
     if (!await ask({ title: 'Finish workout?', message: 'No sets are ticked as done yet.', confirm: 'Finish anyway' })) return;
   }
   w.end = Date.now();
+  const bests = newBests(w);
   state.sessions.push(w); state.active = null;
-  save(); switchTab('history'); toast('Workout saved');
+  save(); switchTab('history');
+  if (!bests.length) toast('Workout saved');
+  else toast(`Workout saved · New best${bests.length > 1 ? 's' : ''} 🎉\n${bests.join('\n')}`, 5000);
 }
 async function cancelWorkout() {
   if (!await ask({ title: 'Discard this workout?', message: 'Everything logged in this session will be lost.', confirm: 'Discard', danger: true })) return;
@@ -1058,6 +1118,7 @@ async function importData(input) {
   if (!await ask({ title: 'Replace all data?', message: `Everything in the app will be replaced with the ${data.sessions.length} workouts in this file.`, confirm: 'Replace', danger: true })) return;
   data.templates ??= [];
   data.theme ??= 'system';
+  delete data.exercises;
   data.lastBackup ??= null;  // a backup file carries its own export time
   state = data; detail = null; tplDraft = null; pastDraft = null; save(); applyTheme(state.theme); render();
   toast('Data imported');
